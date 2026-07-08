@@ -1,5 +1,8 @@
 /**
- * 逆水寒管理系統 — Google Apps Script 後端 v4
+ * 逆水寒管理系統 — Google Apps Script 後端 v5
+ *
+ * ★v5 重要修正：成員清單改為依模式（幫戰/俱樂部）分開讀取，
+ *   修正舊版「讀取時一律讀共用_成員清單」導致兩個模式成員互相污染的問題。
  *
  * 重要：讀取(load)和寫入(sync)都改用 POST，解決 CORS 問題
  *
@@ -64,10 +67,17 @@ function loadData(mode) {
   const ss     = _ss();
   const prefix = mode === 'guild' ? '幫戰_' : '俱樂部_';
 
-  const members    = readSheet(ss, '共用_成員清單',          ['skills','baijia']);
+  // ★修正：成員清單改為依模式讀取（幫戰_成員清單／俱樂部_成員清單），與 saveData 一致。
+  //   舊版錯誤地一律讀「共用_成員清單」，導致兩個模式的成員互相混淆、覆蓋。
+  var members = readSheet(ss, prefix + '成員清單', ['skills','baijia','aliases','changeLog']);
+  // 相容處理：若新版分頁還不存在（第一次升級），退回讀取舊的共用分頁一次，避免看起來像資料消失。
+  if (!members.length) {
+    var legacy = readSheet(ss, '共用_成員清單', ['skills','baijia','aliases','changeLog']);
+    if (legacy.length) members = legacy;
+  }
   const skillList  = readSheet(ss, '共用_絕技清單').map(r => String(r.name||'')).filter(Boolean);
   const baijiaList = readSheet(ss, '共用_群俠技能清單').map(r => String(r.name||'')).filter(Boolean);
-  const events     = readSheet(ss, prefix + '活動場次',      ['teams','roles']);
+  const events     = readSheet(ss, prefix + '活動場次',      ['teams','roles','squadRoles','assignedSkills','assignedBaijia','teamNames','plannedRoster']);
   const matches    = readSheet(ss, prefix + '比賽紀錄',      ['participants','players']);
   const signupRows = readSheet(ss, prefix + '報名紀錄');
 
@@ -89,18 +99,18 @@ function saveData(payload) {
   const prefix = mode === 'guild' ? '幫戰_' : '俱樂部_';
 
   writeSheet(ss, prefix + '成員清單', payload.members || [], [
-    'id','name','jobId','team','status','note','skills','baijia','aliases','changeLog','createdAt'
+    'id','name','jobId','team','status','note','skills','baijia','aliases','changeLog','createdAt','updatedAt'
   ]);
   writeSheet(ss, '共用_絕技清單',
     (payload.skillList || []).map(function(s){ return { name: s }; }), ['name']);
   writeSheet(ss, '共用_群俠技能清單',
     (payload.baijiaList || []).map(function(s){ return { name: s }; }), ['name']);
   writeSheet(ss, prefix + '活動場次', payload.events || [], [
-    'id','name','date','type','teams','roles','createdAt'
+    'id','name','date','type','teamNames','teams','roles','squadRoles','assignedSkills','assignedBaijia','plannedRoster','planSavedAt','createdAt','updatedAt'
   ]);
   writeSheet(ss, prefix + '比賽紀錄', payload.matches || [], [
     'id','date','type','enemy','result','ourCount','enemyCount',
-    'notes','participants','players','createdAt'
+    'notes','participants','players','createdAt','updatedAt'
   ]);
   writeSheet(ss, prefix + '報名紀錄',
     flattenSignups(payload.signups), ['eventId','playerName','status']);
