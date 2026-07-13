@@ -18,12 +18,13 @@ function renderAdminSignupMgr(pane){
       <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;flex-wrap:wrap">
         <div>
           <div style="font-size:15px;font-weight:700;margin-bottom:4px">${ev.name}</div>
-          <div style="font-size:12px;color:var(--txt2)">📅 ${ev.date||''} ／ ${ev.type||''}${ev.type==='約戰'?(ev.eventTime?'　🕐 '+ev.eventTime:'')+(ev.matchFormat?'　⚔️ 賽制 '+ev.matchFormat:''):''}</div>
+          <div style="font-size:12px;color:var(--txt2)">📅 ${ev.date||''} ／ ${ev.type||''}${ev.type==='約戰'?(ev.eventTime?'　🕐 '+ev.eventTime:'')+(ev.matchFormat?'　⚔️ '+(ev.matchFormat==='2'?'兩局制':'一局制'):''):''}</div>
           ${cdText?`<div style="font-size:12px;font-weight:700;color:${cdColor};margin-top:4px">${cdText}（截止：${evLockTimeLabel(ev)}）</div>`:''}
         </div>
         <div style="display:flex;gap:6px;flex-wrap:wrap">
           <button class="btn btn-outline xs" onclick="toggleAttendeePanel('${ev.id}')">📋 查看名單</button>
           ${pendingNames.length?`<button class="btn btn-outline xs" onclick="copyPendingReminder('${ev.id}')" title="複製「尚未報名」催繳文字，可直接貼到遊戲群組">📣 複製催繳名單</button>`:''}
+          <button class="btn btn-outline xs" onclick="openEditEvent('${ev.id}')">✏️ 編輯</button>
           <button class="btn btn-outline xs" onclick="exportAttendees('${ev.id}')">匯出CSV</button>
           <button class="btn btn-red xs" onclick="deleteEvent('${ev.id}')">刪除</button>
         </div>
@@ -94,16 +95,44 @@ function exportAttendees(evId){
 // ============================================================
 // 建立場次（由報名管理建立）
 // ============================================================
+let _editingEvId=null; // 目前正在編輯的場次id；null＝建立新場次
+
 function openEventModal(){
+  _editingEvId=null;
   const typeEl=document.getElementById('ev-type');
   if(typeEl){
     typeEl.innerHTML = CUR_MODE==='club'
       ? '<option>領地戰</option><option>約戰</option>'
       : '<option>單周聯賽</option><option>雙周聯賽</option>';
   }
+  const nameEl=document.getElementById('ev-name'); if(nameEl) nameEl.value='';
   const dateEl=document.getElementById('ev-date');
   if(dateEl && !dateEl.value) dateEl.value=fmtDate(new Date());
+  const t=document.getElementById('modal-event-title'); if(t) t.textContent='建立活動場次';
+  const b=document.getElementById('modal-event-submit'); if(b) b.textContent='建立';
   onEventTypeChange(); // 依目前選到的類型決定要不要顯示約戰欄位
+  openModal('modal-event');
+}
+
+// 編輯既有場次：帶入原本的名稱、日期、類型、約戰時間與局制
+function openEditEvent(evId){
+  const ev=S.events().find(e=>e.id===evId);
+  if(!ev){ toast('找不到此場次','err'); return; }
+  _editingEvId=evId;
+  const typeEl=document.getElementById('ev-type');
+  if(typeEl){
+    typeEl.innerHTML = CUR_MODE==='club'
+      ? '<option>領地戰</option><option>約戰</option>'
+      : '<option>單周聯賽</option><option>雙周聯賽</option>';
+    typeEl.value=ev.type||typeEl.options[0].value;
+  }
+  const nameEl=document.getElementById('ev-name'); if(nameEl) nameEl.value=ev.name||'';
+  const dateEl=document.getElementById('ev-date'); if(dateEl) dateEl.value=String(ev.date||'').slice(0,10);
+  const timeEl=document.getElementById('ev-time'); if(timeEl) timeEl.value=ev.eventTime||'20:00';
+  const fmtEl=document.getElementById('ev-format'); if(fmtEl) fmtEl.value=ev.matchFormat||'1';
+  const t=document.getElementById('modal-event-title'); if(t) t.textContent='編輯活動場次';
+  const b=document.getElementById('modal-event-submit'); if(b) b.textContent='儲存修改';
+  onEventTypeChange();
   openModal('modal-event');
 }
 
@@ -116,32 +145,69 @@ function onEventTypeChange(){
   box.classList.toggle('hidden', !isYuezhan);
 }
 
+// 依日期自動產生場次名稱，例如 07-11（六）
+function _autoEvName(date){
+  const wd=['日','一','二','三','四','五','六'][new Date(date+'T00:00:00').getDay()];
+  return date.slice(5)+'（'+wd+'）';
+}
+
 function submitCreateEvent(){
   try{
     const dateEl=document.getElementById('ev-date');
     const typeEl=document.getElementById('ev-type');
+    const nameEl=document.getElementById('ev-name');
     const date=dateEl&&dateEl.value?dateEl.value:fmtDate(new Date());
     const type=typeEl&&typeEl.value?typeEl.value:(CUR_MODE==='club'?'領地戰':'單周聯賽');
-    if(S.events().some(e=>e.date===date)){ toast('該日期已有活動場次，同一天僅能建立一場','err'); return; }
-    const wd=['日','一','二','三','四','五','六'][new Date(date+'T00:00:00').getDay()];
-    const name=date.slice(5).replace('-','-')+'（'+wd+'）';
+    // 同日限一場的檢查；編輯模式時要排除自己這場
+    if(S.events().some(e=>e.date===date && e.id!==_editingEvId)){ toast('該日期已有活動場次，同一天僅能建立一場','err'); return; }
+    const customName=nameEl?nameEl.value.trim():'';
     const events=S.events();
-    const newEv={id:uid(),name,date,type,teamNames:['進攻','防守','機動'],teams:{reserve:[]},roles:{},squadRoles:{},createdAt:Date.now()};
-    // 約戰額外記錄活動時間與賽制，會一併顯示在玩家端活動畫面
-    if(type==='約戰'){
-      const timeEl=document.getElementById('ev-time');
-      const fmtEl=document.getElementById('ev-format');
-      newEv.eventTime=timeEl&&timeEl.value?timeEl.value:'';
-      newEv.matchFormat=fmtEl&&fmtEl.value?fmtEl.value:'1';
+
+    if(_editingEvId){
+      // ── 編輯既有場次 ──
+      const idx=events.findIndex(e=>e.id===_editingEvId);
+      if(idx<0){ toast('找不到此場次','err'); return; }
+      const ev=events[idx];
+      const dateChanged=String(ev.date||'').slice(0,10)!==date;
+      ev.date=date;
+      ev.type=type;
+      // 名稱規則：有填就用填的；留空則依（新）日期自動產生
+      ev.name=customName||_autoEvName(date);
+      if(type==='約戰'){
+        const timeEl=document.getElementById('ev-time');
+        const fmtEl=document.getElementById('ev-format');
+        ev.eventTime=timeEl&&timeEl.value?timeEl.value:'';
+        ev.matchFormat=fmtEl&&fmtEl.value?fmtEl.value:'1';
+      } else {
+        // 改回非約戰類型時清掉約戰專屬資訊，避免殘留顯示
+        delete ev.eventTime;
+        delete ev.matchFormat;
+      }
+      ev.updatedAt=Date.now(); // 讓多裝置合併時以這筆較新的為準
+      S.setEvents(events);
+      closeModal('modal-event');
+      _editingEvId=null;
+      toast('✅ 場次「'+ev.name+'」已更新'+(dateChanged?'（日期已變更，截止時間會跟著新日期重新計算）':''),'ok');
+    } else {
+      // ── 建立新場次 ──
+      const name=customName||_autoEvName(date);
+      const newEv={id:uid(),name,date,type,teamNames:['進攻','防守','機動'],teams:{reserve:[]},roles:{},squadRoles:{},createdAt:Date.now(),updatedAt:Date.now()};
+      // 約戰額外記錄活動時間與賽制，會一併顯示在玩家端活動畫面
+      if(type==='約戰'){
+        const timeEl=document.getElementById('ev-time');
+        const fmtEl=document.getElementById('ev-format');
+        newEv.eventTime=timeEl&&timeEl.value?timeEl.value:'';
+        newEv.matchFormat=fmtEl&&fmtEl.value?fmtEl.value:'1';
+      }
+      if(typeof ensureTeams==='function') ensureTeams(newEv);
+      events.push(newEv);
+      S.setEvents(events);
+      closeModal('modal-event');
+      toast('✅ 場次「'+name+'」已建立，玩家現在可以報名','ok');
     }
-    if(typeof ensureTeams==='function') ensureTeams(newEv);
-    events.push(newEv);
-    S.setEvents(events);
-    closeModal('modal-event');
-    toast('✅ 場次「'+name+'」已建立，玩家現在可以報名','ok');
     renderAdminSignupMgr(document.getElementById('pane-a-signup-mgr'));
   }catch(err){
     console.error('createEvent error:',err);
-    toast('❌ 建立失敗：'+err.message,'err');
+    toast('❌ 儲存失敗：'+err.message,'err');
   }
 }
