@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,viewport-fit=cover">
+<meta name="description" content="逆水寒俱樂部／幫戰排表、成員、比賽紀錄與數據分析管理系統">
+<meta name="theme-color" content="#0d1117">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="逆水寒管理系統">
+<meta name="mobile-web-app-capable" content="yes">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+<title>逆水寒｜俱樂部 / 幫戰管理系統</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<!-- ===== MODE SELECT ===== -->
+<div id="screen-mode">
+  <div class="mode-bg"><div class="morb morb1"></div><div class="morb morb2"></div></div>
+  <div class="mode-wrap">
+    <div class="mode-hero">
+      <div class="glyph">⚔️</div>
+      <h1>逆水寒管理系統</h1>
+      <p>請選擇你要進入的玩法模式</p>
+    </div>
+    <div class="mode-cards">
+      <div class="mode-card club" onclick="selectMode('club')">
+        <div class="mode-icon">🏛️</div>
+        <h2>俱樂部</h2>
+        <p>俱樂部聯賽排表<br>成員管理、比賽紀錄<br>數據統計分析</p>
+      </div>
+      <div class="mode-card guild" onclick="selectMode('guild')">
+        <div class="mode-icon">🛡️</div>
+        <h2>幫戰</h2>
+        <p>幫派戰排表<br>成員管理、比賽紀錄<br>數據統計分析</p>
+      </div>
+    </div>
+    <p style="font-size:11px;color:var(--txt3)">兩種模式玩家資料不共用，排表與紀錄各自獨立</p>
+  </div>
+</div>
+
+<!-- ===== ORG SELECT（選擇幫會／俱樂部）===== -->
+<div id="screen-org" class="hidden">
+  <div class="mode-bg"><div class="morb morb1"></div><div class="morb morb2"></div></div>
+  <button class="back-btn" onclick="backToMode()">← 返回選擇模式</button>
+  <div class="mode-wrap">
+    <div class="mode-hero">
+      <span id="org-mode-tag" class="mode-tag club">俱樂部</span>
+      <h1>選擇你的組織</h1>
+      <p>每個組織的成員、排表與比賽紀錄各自獨立</p>
+    </div>
+    <div class="mode-cards" id="org-cards"></div>
+  </div>
+</div>
+
+<!-- ===== LOGIN ===== -->
+<div id="screen-login" class="hidden">
+  <div class="login-bg"></div>
+  <button class="back-btn" onclick="backToOrg()">← 返回選擇組織</button>
+  <div class="login-wrap">
+    <div class="login-title-bar">
+      <span id="login-mode-tag" class="mode-tag club">俱樂部</span>
+      <h1>登入系統</h1>
+      <p>選擇你的身份進入系統</p>
+    </div>
+    <div class="login-cards">
+      <div class="login-card player">
+        <div class="login-card-icon">🧑‍🤝‍🧑</div>
+        <h2>玩家登入</h2>
+        <p>填寫報名、查看排表<br>更新個人資料</p>
+        <div class="login-input-group">
+          <input id="player-name-input" class="login-input" placeholder="輸入角色名稱或關鍵字" autocomplete="off" oninput="loginSuggest(this.value)" onfocus="loginSuggest(this.value)" onblur="setTimeout(()=>{const b=document.getElementById('login-suggest-box'); if(b) b.innerHTML='';},150)">
+          <div id="login-suggest-box" class="login-suggest"></div>
+        </div>
+        <button class="btn-login-player" onclick="playerLogin()">進入玩家介面 →</button>
+      </div>
+      <div class="login-card admin">
+        <div class="login-card-icon">👑</div>
+        <h2>管理員登入</h2>
+        <p>排表管理、成員編輯<br>比賽紀錄與數據分析</p>
+        <input id="admin-pw-input" class="login-input" type="password" placeholder="管理員密碼">
+        <button class="btn-login-admin" onclick="adminLogin()">進入管理介面 →</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== MAIN ===== -->
+<div id="screen-main" class="hidden">
+  <div class="topbar">
+    <div class="topbar-l">
+      <span style="font-size:20px">⚔️</span>
+      <span class="topbar-title">逆水寒系統</span>
+      <span id="topbar-mode-badge" class="mode-badge club">俱樂部</span>
+    </div>
+    <div class="topbar-r">
+      <span id="topbar-sync-status" class="sync-status" onclick="manualSyncNow()" title="點擊手動同步"></span>
+      <button id="topbar-refresh-btn" class="logout-btn hidden" onclick="adminRefreshNow()" title="立即重新整理（抓取玩家最新更新）">🔄</button>
+      <button id="topbar-qr-btn" class="logout-btn hidden" onclick="openQRModal()" title="報名QR碼">📱</button>
+      <span id="user-chip" class="user-chip player"></span>
+      <button class="logout-btn" onclick="logout()" title="登出（切換模式）">🚪</button>
+    </div>
+  </div>
+
+  <nav id="player-nav" class="player-nav hidden">
+    <button class="nav-btn active" data-tab="p-home" onclick="switchTab('p-home',this)"><span class="nav-ico">🏠</span><span>首頁</span></button>
+    <button class="nav-btn" data-tab="p-signup" onclick="switchTab('p-signup',this)"><span class="nav-ico">✋</span><span>活動報名</span></button>
+    <button class="nav-btn" data-tab="p-lineup" onclick="switchTab('p-lineup',this)"><span class="nav-ico">📋</span><span>本周排表</span></button>
+    <button class="nav-btn" data-tab="p-stats" onclick="switchTab('p-stats',this)"><span class="nav-ico">📈</span><span>數據分析</span></button>
+      </nav>
+
+  <nav id="admin-nav" class="player-nav hidden">
+    <button class="nav-btn active" data-tab="a-signup-mgr" onclick="switchTab('a-signup-mgr',this)"><span class="nav-ico">📅</span><span>報名管理</span></button>
+    <button class="nav-btn" data-tab="a-lineup" onclick="switchTab('a-lineup',this)"><span class="nav-ico">🗡️</span><span>排表系統</span></button>
+    <button class="nav-btn" data-tab="a-matches" onclick="switchTab('a-matches',this)"><span class="nav-ico">📊</span><span>比賽紀錄</span></button>
+    <button class="nav-btn" data-tab="a-stats" onclick="switchTab('a-stats',this)"><span class="nav-ico">📈</span><span>數據分析</span></button>
+    <button class="nav-btn" data-tab="a-members" onclick="switchTab('a-members',this)"><span class="nav-ico">👥</span><span>成員管理</span></button>
+    <button class="nav-btn" data-tab="a-skills" onclick="switchTab('a-skills',this)"><span class="nav-ico">🎴</span><span>技能設定</span></button>
+  </nav>
+
+  <div class="tab-content">
+    <div id="pane-p-home" class="pane"></div>
+    <div id="pane-p-signup" class="pane hidden"></div>
+    <div id="pane-p-lineup" class="pane hidden"></div>
+    <div id="pane-p-stats" class="pane hidden"></div>
+    <div id="pane-p-profile" class="pane hidden"></div>
+    <div id="pane-a-lineup" class="pane hidden"></div>
+    <div id="pane-a-members" class="pane hidden"></div>
+    <div id="pane-a-matches" class="pane hidden"></div>
+    <div id="pane-a-stats" class="pane hidden"></div>
+    <div id="pane-a-signup-mgr" class="pane hidden"></div>
+    <div id="pane-a-skills" class="pane hidden"></div>
+  </div>
+</div>
+
+<!-- MODAL: member edit -->
+<div id="modal-member" class="modal-ov hidden">
+  <div class="modal wide">
+    <div class="modal-hd"><h3 id="modal-member-title">新增成員</h3><button class="close-btn" onclick="closeModal('modal-member')">✕</button></div>
+    <div class="modal-body">
+      <div class="frow">
+        <div class="fg"><label>角色名稱 *</label><input id="m-name" class="fi" placeholder="角色名稱"></div>
+        <div class="fg"><label>職業 *</label><select id="m-class" class="fsel" onchange="memberClassChange()"><option value="">選擇職業...</option></select></div>
+        <div class="fg"><label>狀態</label><select id="m-status" class="fsel"><option>固定團</option><option>一般成員</option><option>暫離</option></select><p class="hint" style="margin-top:4px">「暫離」僅管理端可設定：保留成員資料，但不列入報名催繳、不出現在排表成員池；成員回歸後改回一般成員或固定團即可。</p></div>
+        <div class="fg full"><label>絕技（從技能設定清單勾選）</label><div id="m-skills-tags" class="tag-sel"></div></div>
+        <div class="fg full"><label>群俠技能（從技能設定清單勾選）</label><div id="m-baijia-tags" class="tag-sel"></div></div>
+        <div class="fg full" id="m-changelog-box" style="display:none"><label>📝 改名／異動歷史</label><div id="m-changelog" style="font-size:12px;color:var(--txt2);background:var(--bg);border:1px solid var(--border);border-radius:var(--r2);padding:8px;max-height:120px;overflow-y:auto"></div></div>
+        <div class="fg full"><p class="hint">💡 隊伍分配（進攻／防守／機動）請至「排表系統」→「匯入固定團」的固定團編輯功能設定，會套用到出戰排表與匯出圖片。</p></div>
+      </div>
+    </div>
+    <div class="modal-ft">
+      <button class="btn btn-outline" onclick="closeModal('modal-member')">取消</button>
+      <button id="btn-del-member" class="btn btn-red hidden" onclick="deleteMember()">刪除</button>
+      <button class="btn btn-blue" onclick="saveMember()">儲存</button>
+    </div>
+  </div>
+</div>
+
+
+<!-- MODAL: new event -->
+<div id="modal-match-videos" class="modal-ov hidden">
+  <div class="modal">
+    <div class="modal-hd"><h3>🎬 比賽影片網址</h3><button class="close-btn" onclick="closeModal('modal-match-videos')">✕</button></div>
+    <div class="modal-body">
+      <div class="fg"><label>影片網址（一行一個，可留空，之後隨時回來補充）</label>
+        <textarea id="match-videos-input" class="fi" rows="5" placeholder="https://youtube.com/...&#10;https://www.bilibili.com/..." style="resize:vertical;min-height:100px"></textarea>
+      </div>
+    </div>
+    <div class="modal-ft">
+      <button class="btn btn-outline" onclick="closeModal('modal-match-videos')">取消</button>
+      <button class="btn btn-blue" onclick="saveMatchVideos()">儲存</button>
+    </div>
+  </div>
+</div>
+
+<div id="modal-event" class="modal-ov hidden">
+  <div class="modal">
+    <div class="modal-hd"><h3 id="modal-event-title">建立活動場次</h3><button class="close-btn" onclick="closeModal('modal-event')">✕</button></div>
+    <div class="modal-body">
+      <div style="display:flex;flex-direction:column;gap:12px">
+        <div class="fg" id="ev-name-field"><label>場次名稱（留空會自動依日期產生，例如 07-11（六））</label><input id="ev-name" class="fi" placeholder="留空自動產生"></div>
+        <div class="fg"><label>活動日期</label><input id="ev-date" class="fi" type="date"></div>
+        <div class="fg"><label>活動類型</label><select id="ev-type" class="fsel" onchange="onEventTypeChange()"></select></div>
+        <!-- 約戰專屬欄位：選「約戰」時才出現 -->
+        <div id="ev-yuezhan-fields" class="hidden" style="display:flex;flex-direction:column;gap:12px">
+          <div class="fg"><label>活動時間</label><input id="ev-time" class="fi" type="time" value="20:00"></div>
+          <div class="fg"><label>賽制</label>
+            <select id="ev-format" class="fsel">
+              <option value="1">一局制</option>
+              <option value="2">兩局制</option>
+            </select>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="modal-ft">
+      <button class="btn btn-outline" onclick="closeModal('modal-event')">取消</button>
+      <button id="modal-event-submit" class="btn btn-blue" onclick="submitCreateEvent()">建立</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: player self-edit -->
+<div id="modal-self-edit" class="modal-ov hidden">
+  <div class="modal wide">
+    <div class="modal-hd"><h3>更新我的資料</h3><button class="close-btn" onclick="closeModal('modal-self-edit')">✕</button></div>
+    <div class="modal-body">
+      <div class="frow">
+        <div class="fg full"><label>角色名稱</label><input id="se-name" class="fi" placeholder="你的角色名稱" autocomplete="off"><p class="hint" style="margin-top:4px">若遊戲內改名了，可在此更新。系統會保留改名紀錄，管理員仍可對應到你過去的出賽/報名資料。</p></div>
+        <div class="fg full"><label>職業</label><select id="se-class" class="fsel" onchange="selfEditClassChange()"><option value="">選擇職業...</option></select></div>
+        <div class="fg full"><label>已滿等絕技</label><div id="se-skills-tags" class="tag-sel"></div></div>
+        <div class="fg full"><label>常用群俠技能</label><div id="se-baijia-tags" class="tag-sel"></div></div>
+      </div>
+      <p class="hint mt8">💡 絕技與群俠技能清單由管理員設定，你只能從清單中勾選。</p>
+    </div>
+    <div class="modal-ft">
+      <button class="btn btn-outline" onclick="closeModal('modal-self-edit')">取消</button>
+      <button class="btn btn-blue" onclick="saveSelfEdit()">儲存</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: role assign (砲手/指揮) -->
+<div id="modal-role" class="modal-ov hidden">
+  <div class="modal">
+    <div class="modal-hd"><h3>指定特殊角色</h3><button class="close-btn" onclick="closeModal('modal-role')">✕</button></div>
+    <div class="modal-body">
+      <p style="font-size:13px;margin-bottom:10px">玩家：<strong id="role-player-name"></strong></p>
+      <div class="fg">
+        <label>角色身份</label>
+        <select id="role-select" class="fsel">
+          <option value="">一般成員（無特殊角色）</option>
+          <option value="cannon">🧨 砲手</option>
+          <option value="cmd">⭐ 指揮</option>
+        </select>
+      </div>
+      <p class="hint mt8">砲手與指揮須先分配到隊伍中才能指定，每隊可有多名砲手，指揮通常為單一玩家。</p>
+    </div>
+    <div class="modal-ft">
+      <button class="btn btn-outline" onclick="closeModal('modal-role')">取消</button>
+      <button class="btn btn-blue" onclick="saveRole()">確定</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: google sync -->
+<div id="modal-match-detail" class="modal-ov hidden">
+  <div class="modal wide">
+    <div class="modal-hd"><h3>📊 比賽數據</h3><button class="close-btn" onclick="closeModal('modal-match-detail')">✕</button></div>
+    <div class="modal-body"><div id="match-detail-body"></div></div>
+    <div class="modal-ft"><button class="btn btn-outline" onclick="closeModal('modal-match-detail')">關閉</button></div>
+  </div>
+</div>
+
+<div id="modal-coreteam" class="modal-ov hidden">
+  <div class="modal wide">
+    <div class="modal-hd"><h3>👥 編輯固定團隊伍排表</h3><button class="close-btn" onclick="closeModal('modal-coreteam')">✕</button></div>
+    <div class="modal-body"><div id="coreteam-body"></div></div>
+    <div class="modal-ft"><button class="btn btn-outline" onclick="closeModal('modal-coreteam')">取消</button><button class="btn btn-blue" onclick="saveCoreTeam()">儲存</button></div>
+  </div>
+</div>
+
+<div id="modal-assign-skill" class="modal-ov hidden">
+  <div class="modal wide">
+    <div class="modal-hd"><h3>🎴 指派技能給 <span id="assign-skill-name"></span></h3><button class="close-btn" onclick="closeModal('modal-assign-skill')">✕</button></div>
+    <div class="modal-body">
+      <p class="hint">可複選多個絕技與群俠技能，做為本場次的出戰指派（僅套用於此排表，不影響成員個人資料設定）。清單優先列出該玩家已設定的項目。</p>
+      <div class="fg full"><label>絕技（可多選）</label><div id="assign-skills-tags" class="tag-sel"></div></div>
+      <div class="fg full"><label>群俠技能（可多選）</label><div id="assign-baijia-tags" class="tag-sel"></div></div>
+    </div>
+    <div class="modal-ft"><button class="btn btn-outline" onclick="closeModal('modal-assign-skill')">取消</button><button class="btn btn-blue" onclick="saveAssignSkill()">儲存</button></div>
+  </div>
+</div>
+
+<div id="modal-history" class="modal-ov hidden">
+  <div class="modal wide">
+    <div class="modal-hd"><h3>📜 我的歷史紀錄</h3><button class="close-btn" onclick="closeModal('modal-history')">✕</button></div>
+    <div class="modal-body"><div id="history-body"></div></div>
+    <div class="modal-ft"><button class="btn btn-outline" onclick="closeModal('modal-history')">關閉</button></div>
+  </div>
+</div>
+
+<div id="modal-attendance-detail" class="modal-ov hidden">
+  <div class="modal">
+    <div class="modal-hd"><h3>📊 出席明細 — <span id="att-detail-name"></span></h3><button class="close-btn" onclick="closeModal('modal-attendance-detail')">✕</button></div>
+    <div class="modal-body">
+      <p id="att-detail-summary" style="margin-bottom:10px;font-size:13px"></p>
+      <p class="hint" style="margin-bottom:8px">下方為各場次的報名／排表／出賽狀態。</p>
+      <div id="att-detail-list" style="max-height:360px;overflow-y:auto"></div>
+    </div>
+    <div class="modal-ft"><button class="btn btn-outline" onclick="closeModal('modal-attendance-detail')">關閉</button></div>
+  </div>
+</div>
+
+
+<div id="modal-qrcode" class="modal-ov hidden">
+  <div class="modal">
+    <div class="modal-hd"><h3>📱 報名QR碼（<span id="qr-mode-label"></span>）</h3><button class="close-btn" onclick="closeModal('modal-qrcode')">✕</button></div>
+    <div class="modal-body" style="text-align:center">
+      <p class="hint">成員掃描此QR碼即可直接開啟登入頁面（已預先選好「<span id="qr-mode-label2"></span>」模式），再從清單點選或搜尋自己的角色名稱即可報名，不用先進管理端輸入網址。</p>
+      <div id="qr-canvas-box" style="display:flex;justify-content:center;align-items:center;margin:16px 0;min-height:200px;background:#fff;border-radius:var(--r2);padding:12px"></div>
+      <div id="qr-url-text" style="font-size:12px;color:var(--txt2);word-break:break-all;margin-bottom:14px"></div>
+      <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap">
+        <button class="btn btn-outline sm" onclick="copyQRLink()">🔗 複製連結</button>
+        <button class="btn btn-blue sm" onclick="downloadQRImage()">⬇️ 下載QR圖片</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<!-- MODAL: skill add -->
+<div id="modal-skill-add" class="modal-ov hidden">
+  <div class="modal">
+    <div class="modal-hd"><h3 id="skill-add-title">新增絕技</h3><button class="close-btn" onclick="closeModal('modal-skill-add')">✕</button></div>
+    <div class="modal-body">
+      <div class="fg"><label>名稱（可一次輸入多個，用逗號分隔）</label><input id="skill-add-input" class="fi" placeholder="例：天罡神功, 萬里追雲"></div>
+    </div>
+    <div class="modal-ft">
+      <button class="btn btn-outline" onclick="closeModal('modal-skill-add')">取消</button>
+      <button class="btn btn-blue" onclick="confirmAddSkill()">新增</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast" class="toast hidden"></div>
+<input type="file" id="file-excel" accept=".csv,.xlsx,.xls" class="hidden" onchange="handleExcel(event)">
+
+<!-- MODAL: import confirm (勝負確認) -->
+<div id="modal-import-confirm" class="modal-ov hidden">
+  <div class="modal wide">
+    <div class="modal-hd"><h3>確認匯入比賽資料</h3><button class="close-btn" onclick="cancelImport()">✕</button></div>
+    <div class="modal-body">
+      <div id="import-confirm-body"></div>
+    </div>
+    <div class="modal-ft">
+      <button class="btn btn-outline" onclick="cancelImport()">取消</button>
+      <button class="btn btn-blue" onclick="confirmImport()">✅ 確認匯入</button>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+
+<!-- App modules (order matters: data/store before consumers) -->
+<script src="js/data.js"></script>
+<script src="js/store.js"></script>
+<script src="js/app.js"></script>
+<script src="js/helpers.js"></script>
+<script src="js/player.js"></script>
+<script src="js/lineup.js"></script>
+<script src="js/members.js"></script>
+<script src="js/matches.js"></script>
+<script src="js/stats.js"></script>
+<script src="js/signup.js"></script>
+<script src="js/skills.js"></script>
+<script src="js/gsync.js"></script>
+<script src="js/qr.js"></script>
+
+<script>
+  // Register service worker for offline / installable PWA support
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('sw.js').then(reg => {
+        // 每次進入頁面（含掃QR碼、輸入網址、從主畫面開啟APP）都主動檢查有沒有新版本
+        reg.update().catch(()=>{});
+        // 從背景切回APP時也檢查一次（PWA常駐背景的情況）
+        document.addEventListener('visibilitychange', () => {
+          if (document.visibilityState === 'visible') reg.update().catch(()=>{});
+        });
+      }).catch(err => console.warn('SW registration failed:', err));
+
+      // 新版本的程式接管時，自動重新整理一次頁面，
+      // 確保每個人一定是用最新版操作，不用手動重整好幾遍。
+      // 「首次安裝」與「已重整過」的情況不會觸發，避免無限重整迴圈。
+      const hadController = !!navigator.serviceWorker.controller;
+      let _swReloaded = false;
+      navigator.serviceWorker.addEventListener('controllerchange', () => {
+        if (!hadController || _swReloaded) return;
+        _swReloaded = true;
+        location.reload();
+      });
+    });
+  }
+
+  // Set default dates on load
+  document.addEventListener('DOMContentLoaded', () => {
+    const today = fmtDate(new Date());
+    ['ev-date','match-date'].forEach(id => { const el = document.getElementById(id); if (el) el.value = today; });
+    document.getElementById('player-name-input').addEventListener('keydown', e => { if (e.key === 'Enter') playerLogin(); });
+    document.getElementById('admin-pw-input').addEventListener('keydown', e => { if (e.key === 'Enter') adminLogin(); });
+  });
+</script>
+</body>
+</html>
