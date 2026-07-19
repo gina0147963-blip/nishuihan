@@ -33,6 +33,8 @@ const ORGS = [
     pwSha256:'615ed7fb1504b0c724a296d7a69e6c7b2f9ea2c57c1d8206c5afdf392ebdfd25' },
   { id:'jinzhao', name:'今朝',     mode:'club',  spreadsheetId:SHARED_SPREADSHEET_ID, prefix:'俱樂部_',
     pwSha256:'615ed7fb1504b0c724a296d7a69e6c7b2f9ea2c57c1d8206c5afdf392ebdfd25' },
+  { id:'byfx',    name:'白月梵星', mode:'guild', spreadsheetId:'1MZo6OXOnz7R5lVbMcMnJ9jAaW1eMS81_khWKlvtXyBc', prefix:'白月梵星_',
+    pwSha256:'94edf28c6d6da38fd35d7ad53e485307f89fbeaf120485c8d17a43f323deee71' },
   // ── 要新增幫會或俱樂部時，複製下面這行範本、取消註解並填入資料 ──────────
   // 步驟：1) 開一份新的空白 Google 試算表（同一個帳號），從網址複製ID
   //       2) id 取一個獨一無二的英文小寫代號（設定後就不要再改）
