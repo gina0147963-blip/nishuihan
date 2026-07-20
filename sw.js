@@ -1,7 +1,7 @@
 // ============================================================
 // SERVICE WORKER — 離線快取與 PWA 安裝支援
 // ============================================================
-const CACHE_NAME = 'nshuanguild-v99';
+const CACHE_NAME = 'nshuanguild-v100';
 const CORE_ASSETS = [
   './',
   './index.html',
@@ -18,6 +18,7 @@ const CORE_ASSETS = [
   './js/stats.js',
   './js/signup.js',
   './js/skills.js',
+  './js/scores.js',
   './js/gsync.js',
   './js/qr.js',
   './icons/icon-192.png',
