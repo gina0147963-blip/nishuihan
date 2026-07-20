@@ -148,7 +148,7 @@ function renderAdminScores(pane){
     <div class="sec-head" style="margin-bottom:10px"><h3 style="font-size:14px;font-weight:700">兌換獎勵</h3>
       <button class="btn btn-outline xs" onclick="addRewardRow()">+ 新增一列</button></div>
     <div class="tbl-wrap"><table>
-      <thead><tr><th style="width:110px">積分需求</th><th>可兌換獎勵</th><th style="width:100px">獎勵數目</th><th style="width:50px"></th></tr></thead>
+      <thead><tr><th style="width:110px">積分需求</th><th>可兌換獎勵</th><th style="width:100px">獎勵數量</th><th style="width:50px"></th></tr></thead>
       <tbody id="score-reward-rows">${cfg.rewards.map((r,i)=>_rewardRowHtml(r,i)).join('')}</tbody>
     </table></div>
   </div>
