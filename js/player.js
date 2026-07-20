@@ -71,6 +71,7 @@ function renderPlayerHome(pane){
       <div class="my-stat-row">
         <div class="my-stat" onclick="openMyHistory()" style="cursor:pointer;display:flex;align-items:center;justify-content:center" title="點擊查看歷史紀錄"><div class="my-stat-l" style="font-size:16px;font-weight:700">📜 我的歷史紀錄 ▸</div></div>
         <div class="my-stat"><div class="my-stat-n" style="color:${attRateColor3(a.a,a.b,a.c,a.bFull,a.cFull)}">${a.a}/${a.b}/${a.c}</div><div class="my-stat-l">出場／報名／排表</div></div>
+        ${typeof scoreHomeStatHtml==='function'?scoreHomeStatHtml():''}
       </div>
       ${(()=>{const note=attStatusNote(a.a,a.b,a.c,true,a.bFull,a.cFull); return note?`<div style="font-size:12px;color:${note.type==='warn1'?'var(--gold)':note.type==='warn2'?'var(--bad)':'var(--accent)'};margin-top:6px">${note.text}</div>`:'';})()}
       <div class="fg" style="margin-top:10px;padding-top:10px;border-top:1px dashed var(--border)">
@@ -448,6 +449,7 @@ function renderPlayerProfile(pane){
       <div class="my-stat-row">
         <div class="my-stat" onclick="openMyHistory()" style="cursor:pointer;display:flex;align-items:center;justify-content:center" title="點擊查看歷史紀錄"><div class="my-stat-l" style="font-size:16px;font-weight:700">📜 我的歷史紀錄 ▸</div></div>
         <div class="my-stat"><div class="my-stat-n" style="color:${attRateColor3(a.a,a.b,a.c,a.bFull,a.cFull)}">${a.a}/${a.b}/${a.c}</div><div class="my-stat-l">出場／報名／排表</div></div>
+        ${typeof scoreHomeStatHtml==='function'?scoreHomeStatHtml():''}
       </div>
       ${(()=>{const note=attStatusNote(a.a,a.b,a.c,true,a.bFull,a.cFull); return note?`<div style="font-size:12px;color:${note.type==='warn1'?'var(--gold)':note.type==='warn2'?'var(--bad)':'var(--accent)'};margin-top:6px">${note.text}</div>`:'';})()}
       <div class="fg" style="margin-bottom:10px"><label>已滿等絕技</label><div class="skill-list">${(me.skills||[]).map(s=>`<span class="skill-chip active">${s}</span>`).join('')||'<span style="color:var(--txt3);font-size:12px">尚未設定</span>'}</div></div>
