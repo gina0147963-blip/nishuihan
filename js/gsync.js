@@ -210,6 +210,15 @@ async function syncLoad(silent) {
       if (Array.isArray(data.baijiaList) && data.baijiaList.length) _writeBaijiaList(data.baijiaList);
       applyMerged(data.events,  ()=>S.events(),  _writeEvents,  'events');
       applyMerged(data.matches, ()=>S.matches(), _writeMatches, 'matches');
+      // 積分手動紀錄：逐筆 id+updatedAt 合併（作廢用 void 標記，不刪列，天然防復活）
+      applyMerged(data.scoreLog, ()=>S.g(S.k('score_log'),[]), v=>S.s(S.k('score_log'),v), 'scores');
+      // 積分設定：整包以 updatedAt 較新者為主（僅管理端會修改，衝突機率極低）
+      if (data.scoreCfg && typeof data.scoreCfg==='object') {
+        const localCfg=S.g(S.k('score_cfg'),null);
+        const cu=Number(data.scoreCfg.updatedAt)||0, lu=localCfg?(Number(localCfg.updatedAt)||0):0;
+        if (cu>=lu) S.s(S.k('score_cfg'), data.scoreCfg);
+        else needPushBack=true;
+      } else if (S.g(S.k('score_cfg'),null)) { needPushBack=true; }
       // signups 是巢狀物件（依場次→依人名），用淺層合併即可保留兩邊的回報紀錄
       if (data.signups && typeof data.signups==='object') {
         const localSignups = S.signups()||{};
@@ -298,6 +307,8 @@ function _buildSyncPayload(mode, org){
     events:     _normEvents(S.events()),
     signups:    S.signups(),
     matches:    S.matches(),
+    scoreCfg:   S.g(S.k('score_cfg'), null),
+    scoreLog:   S.g(S.k('score_log'), []),
   };
 }
 
