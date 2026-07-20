@@ -31,6 +31,7 @@ function _attDetail(name){
     let dayPlayedCount=0; day.forEach(mm=>{ if((mm.participants||[]).some(n=>alias.has(n))) dayPlayedCount++; });
     const place=placement(ev);
     rows.push({
+      evId:ev.id,
       date:ev.date||'', name:ev.name||'', type:ev.type||'',
       signup,                      // 'attend' | 'reserve' | 'absent' | ''(未回覆)
       place,                        // 隊伍標籤／'候補'／''
@@ -126,7 +127,7 @@ function openAttendanceDetail(name){
     const noteColor=note?.type==='warn1'?'var(--gold)':note?.type==='warn2'?'var(--bad)':note?.type==='reserve'?'var(--accent)':'var(--txt2)';
     const leaveNote=checkLongLeaveWarning(name);
     document.getElementById('att-detail-summary').innerHTML =
-      `出席：<strong style="color:${attRateColor3(r.a,r.b,r.c,r.bFull,r.cFull)}">${r.a}/${r.b}/${r.c}</strong>　（實際出場次數／報名次數／排入排表次數）${note?'<br><span style="font-size:12px;color:'+noteColor+'">'+note.text+'</span>':''}${leaveNote?'<br><span style="font-size:12px;color:var(--bad)">'+leaveNote.text+'</span>':''}`;
+      `出席：<strong style="color:${attRateColor3(r.a,r.b,r.c,r.bFull,r.cFull)}">${r.a}/${r.b}/${r.c}</strong>　（實際出場次數／報名次數／排入排表次數）${note?'<br><span style="font-size:12px;color:'+noteColor+'">'+note.text+'</span>':''}${leaveNote?'<br><span style="font-size:12px;color:var(--bad)">'+leaveNote.text+'</span>':''}${typeof scoreAttSummaryHtml==='function'?scoreAttSummaryHtml(name):''}`;
   }
   // 每場活動顯示三項狀態：報名／排表／出賽
   const signupBadge=s=>s==='attend'?'<span style="color:var(--ok);font-weight:700">✅ 出席</span>'
@@ -150,6 +151,7 @@ function openAttendanceDetail(name){
           <span>排表：${placeBadge(x.place)}</span>
           <span>出賽：${playBadge(x)}${x.dayMatchCount>1?' <span style="color:var(--txt3);font-weight:400">（當天共'+x.dayMatchCount+'場比賽'+(x.dayPlayedCount>0?'，計入出場次數'+x.dayPlayedCount+'次）':'）')+'</span>':''}</span>
         </div>
+        ${typeof scoreAttRowHtml==='function'?scoreAttRowHtml(name, x.evId):''}
       </div>`;
   const recentHtml=recentRows.length
     ? `<div style="display:flex;flex-direction:column;gap:8px">${recentRows.map(rowCardHtml).join('')}</div>`
@@ -168,6 +170,7 @@ function openAttendanceDetail(name){
               <span>排表：${placeBadge(x.place)}</span>
               <span>出賽：${playBadge(x)}${x.dayMatchCount>1?' <span style="color:var(--txt3);font-weight:400">（當天共'+x.dayMatchCount+'場比賽'+(x.dayPlayedCount>0?'，計入出場次數'+x.dayPlayedCount+'次）':'）')+'</span>':''}</span>
             </div>
+            ${typeof scoreAttRowHtml==='function'?scoreAttRowHtml(name, x.evId):''}
           </div>
         </div>`).join('')}</div>`
     : '';
@@ -242,9 +245,10 @@ function _memberRowsHtml(filtered, actMap, qa){
     const job=jobById(m.jobId);
     const a=actMap[m.id];
     const inactive=a.a===0&&a.resp===0;
+    const isAway=(m.status==='暫離');
     return `<tr${inactive?' style="opacity:.55"':''}>
       <td style="text-align:center;color:var(--txt3);font-size:12px;width:36px">${idx+1}</td>
-      <td><strong>${m.name}</strong>${inactive?'<br><span style="font-size:10px;color:var(--bad)">💤 從未出賽/報名</span>':''}${(m.changeLog&&m.changeLog.length)?`<br><span style="font-size:10px;color:var(--txt3)" title="${m.changeLog.map(c=>c.t+' '+c.type+'：'+c.from+'→'+c.to).join('&#10;')}">📝 ${m.changeLog[m.changeLog.length-1].t} ${m.changeLog[m.changeLog.length-1].type}</span>`:''}</td>
+      <td><strong${isAway?' style="color:var(--bad)"':''}>${isAway?'🚫 ':''}${m.name}</strong>${isAway?'<br><span style="font-size:10px;color:var(--bad);font-weight:700">⛔ 暫離中（不列入排表/催繳）</span>':''}${inactive?'<br><span style="font-size:10px;color:var(--bad)">💤 從未出賽/報名</span>':''}${(m.changeLog&&m.changeLog.length)?`<br><span style="font-size:10px;color:var(--txt3)" title="${m.changeLog.map(c=>c.t+' '+c.type+'：'+c.from+'→'+c.to).join('&#10;')}">📝 ${m.changeLog[m.changeLog.length-1].t} ${m.changeLog[m.changeLog.length-1].type}</span>`:''}</td>
       <td><span class="pill pill-job" style="background:${job.color};color:#fff">${job.name}</span></td>
       <td>${(function(){
         const c=attRateColor3(a.a,a.b,a.c,a.bFull,a.cFull);
@@ -254,11 +258,14 @@ function _memberRowsHtml(filtered, actMap, qa){
         const leaveBadge=leaveNote?` <span title="${leaveNote.text}" style="cursor:help">🏖️</span>`:'';
         return `<button class="btn btn-outline xs" style="color:${c};font-weight:700" onclick="openAttendanceDetail('${m.name.replace(/'/g,"\\'")}')">${a.a}/${a.b}/${a.c}</button>${badge}${leaveBadge}<br><span style="font-size:10px;color:var(--txt3)">（出場／報名／排表）</span>`;
       })()}</td>
+      ${(typeof scoreMemberCellHtml==='function')?scoreMemberCellHtml(m.name):''}
       <td style="font-size:11px;color:var(--txt2);max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${(m.skills||[]).join('、')||'—'}</td>
+      <td style="font-size:11px;color:var(--txt2);max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${(m.baijia||[]).join('、')||'—'}</td>
       <td><button class="btn btn-outline xs" onclick="openEditMember('${m.id}')">編輯</button></td>
     </tr>`;
   }).join('');
-  return tbody||'<tr><td colspan="6" style="text-align:center;color:var(--txt3);padding:24px">'+(qa==='never'?'沒有「從未出賽/報名」的成員 🎉':'尚無成員')+'</td></tr>';
+  const _cols=7+((typeof scoreEnabled==='function'&&scoreEnabled())?1:0);
+  return tbody||'<tr><td colspan="'+_cols+'" style="text-align:center;color:var(--txt3);padding:24px">'+(qa==='never'?'沒有「從未出賽/報名」的成員 🎉':'尚無成員')+'</td></tr>';
 }
 
 function renderAdminMembers(pane){
@@ -280,7 +287,9 @@ function renderAdminMembers(pane){
   <div class="tbl-wrap"><table>
     <thead><tr><th style="width:36px"></th><th>成員名稱</th><th>職業</th>
       <th style="cursor:pointer;white-space:nowrap;user-select:none" onclick="cycleActSort()" title="點擊切換：預設 → 出席少→多 → 出席多→少 → 只看從未出賽/報名">出席場數 ${({'':'⇅','low':'🔼','high':'🔽','never':'💤'})[v.qa]}</th>
+      ${(typeof scoreEnabled==='function'&&scoreEnabled())?'<th title="依報名/出賽/影片自動計分＋手動加分，點成員的數字可看明細">🏅 總積分</th>':''}
       <th style="cursor:pointer;white-space:nowrap;user-select:none" onclick="toggleSkillFilter()" title="點擊切換：只顯示尚未設定絕技的成員">絕技 ${_msSkillState?'❓':'⇅'}</th>
+      <th>群俠技能</th>
       <th>操作</th></tr></thead>
     <tbody id="members-tbody">${_memberRowsHtml(v.filtered, v.actMap, v.qa)}</tbody>
   </table></div>`;
@@ -408,7 +417,7 @@ function exportBackupXLSX(){
     const members=S.members(), events=S.events(), matches=S.matches(), signups=S.signups();
     const evName={}; events.forEach(e=>evName[e.id]=e.name||e.id);
 
-    const mRows=members.map(m=>({角色名稱:m.name,職業:jobById(m.jobId).name,隊伍:m.team||'',狀態:m.status||'',絕技:(m.skills||[]).join('|'),群俠技能:(m.baijia||[]).join('|'),曾用名:(m.aliases||[]).join('|'),備註:m.note||''}));
+    const mRows=members.map(m=>({角色名稱:m.name,職業:jobById(m.jobId).name,隊伍:m.team||'',狀態:m.status||'',總積分:(typeof scoreEnabled==='function'&&scoreEnabled())?memberScoreTotal(m.name):'',絕技:(m.skills||[]).join('|'),群俠技能:(m.baijia||[]).join('|'),曾用名:(m.aliases||[]).join('|'),備註:m.note||''}));
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(mRows.length?mRows:[{}]), '成員清單');
 
     const eRows=events.map(e=>({場次:e.name||'',日期:e.date||'',類型:e.type||''}));
@@ -556,4 +565,3 @@ function autoHealMembers(){
 
 // 「清理重複成員」手動按鈕已移除：重複成員（同名、或改名前的舊名）現在會在每次資料同步時
 // 自動收斂合併（見 gsync.js 的 _dedupeMembersByName 與 _migrateAliasSignups），不需要手動操作。
-
