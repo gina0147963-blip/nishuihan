@@ -31,7 +31,7 @@ const ORGS = [
   { id:'bycx',    name:'白月燦星', mode:'guild', spreadsheetId:SHARED_SPREADSHEET_ID, prefix:'幫戰_',
     pwSha256:'615ed7fb1504b0c724a296d7a69e6c7b2f9ea2c57c1d8206c5afdf392ebdfd25' },
   { id:'jinzhao', name:'今朝',     mode:'club',  spreadsheetId:SHARED_SPREADSHEET_ID, prefix:'俱樂部_',
-    pwSha256:'8c1cdb9cb4dbac6dbb6ebd118ec8f9523d22e4e4cb8cc9df5f7e1e499bba3c10' },
+    pwSha256:'615ed7fb1504b0c724a296d7a69e6c7b2f9ea2c57c1d8206c5afdf392ebdfd25' },
   { id:'byfx',    name:'白月梵星', mode:'guild', spreadsheetId:'1MZo6OXOnz7R5lVbMcMnJ9jAaW1eMS81_khWKlvtXyBc', prefix:'白月梵星_',
     pwSha256:'94edf28c6d6da38fd35d7ad53e485307f89fbeaf120485c8d17a43f323deee71' },
   { id:'jj',      name:'劍姬',     mode:'club',  spreadsheetId:'1WEMwFS-ODIe1GYZisbRG8KHKf1pdHcutKzbsoTN38To', prefix:'劍姬_',
@@ -115,6 +115,16 @@ function _maintInfo() {
   return { on: on, msg: on ? (props.getProperty('maintenance_msg') || '系統維護中') : '' };
 }
 
+// ── 資料版本號：每次資料真的有變動時 +1（存 Script Properties，查詢極快）──
+// 前端每 5 秒問一次版本號（不必讀試算表），有變才抓完整資料，
+// 讓「別人改了 → 我看到」的延遲從最久 30 秒縮短到 5～10 秒
+function _getRev(orgId) {
+  return PropertiesService.getScriptProperties().getProperty('rev_' + orgId) || '0';
+}
+function _bumpRev(orgId) {
+  PropertiesService.getScriptProperties().setProperty('rev_' + orgId, String(Date.now()));
+}
+
 // ── POST：處理所有請求（orgs + adminAuth + load + sync）──
 function doPost(e) {
   try {
@@ -135,19 +145,28 @@ function doPost(e) {
       return _out({ ok: true, valid: ok });
     }
 
+    if (action === 'ver') {
+      // 超輕量版本查詢：只讀 Script Properties，不碰試算表，0.5秒內回應
+      var vOrg = _resolveOrg(payload);
+      var vmi = _maintInfo();
+      return _out({ ok: true, rev: _getRev(vOrg.id), maintenance: vmi.on, maintenanceMsg: vmi.msg });
+    }
+
     if (action === 'load') {
       // 讀取資料：依組織路由到各自的試算表（附帶維護狀態讓前端顯示橫幅）
-      const data = loadData(_resolveOrg(payload));
+      const loadOrg = _resolveOrg(payload);
+      const data = loadData(loadOrg);
       const mi = _maintInfo();
       data.maintenance    = mi.on;
       data.maintenanceMsg = mi.msg;
+      data.rev            = _getRev(loadOrg.id);
       return _out(data);
     }
 
     if (action === 'sync') {
       // 維護模式中：拒絕寫入（前端會把變更留在本機並自動重試，維護結束後補上傳）
-      const mi = _maintInfo();
-      if (mi.on) return _out({ ok: false, maintenance: true, maintenanceMsg: mi.msg });
+      const mi2 = _maintInfo();
+      if (mi2.on) return _out({ ok: false, maintenance: true, maintenanceMsg: mi2.msg });
 
       // ★ 上鎖：多台裝置同時同步時排隊寫入，避免「清空分頁→重寫」互相踩掉
       const lock = LockService.getScriptLock();
@@ -155,12 +174,15 @@ function doPost(e) {
         // 排隊超過25秒拿不到鎖，回報失敗讓前端稍後自動重試（比寫壞資料好）
         return _out({ ok: false, busy: true, error: '伺服器忙碌中，請稍後自動重試' });
       }
+      var syncOrg = _resolveOrg(payload);
+      var changed = false;
       try {
-        saveData(_resolveOrg(payload), payload);
+        changed = saveData(syncOrg, payload);
       } finally {
         lock.releaseLock();
       }
-      return _out({ ok: true, timestamp: payload.timestamp });
+      if (changed) _bumpRev(syncOrg.id); // 有實際變動才遞增版本號，其他裝置的 ver 輪詢才會觸發抓取
+      return _out({ ok: true, timestamp: payload.timestamp, rev: _getRev(syncOrg.id) });
     }
 
     return _out({ error: 'unknown action: ' + action });
@@ -210,6 +232,7 @@ function loadData(org) {
 function saveData(org, payload) {
   const ss     = _orgSS(org);
   const prefix = org.prefix || '';
+  var _changed = false; // 只要有任何一張分頁真的被改寫就為 true，用來決定是否遞增版本號
 
   // ★ 後端把關（防止舊裝置/舊版程式復活已刪資料）：
   // 先把「這次上傳的刪除紀錄」與「雲端既有的刪除紀錄」合併，
@@ -262,10 +285,10 @@ function saveData(org, payload) {
   var EVENT_JSON  = ['teams','roles','squadRoles','assignedSkills','assignedBaijia','teamNames','plannedRoster'];
   var MATCH_JSON  = ['participants','players','videos'];
 
-  writeSheet(ss, prefix + '成員清單',
+  if (writeSheet(ss, prefix + '成員清單',
     _mergeNewest(readSheet(ss, prefix + '成員清單', MEMBER_JSON), _filterDeleted(payload.members, 'members'), 'members'), [
     'id','name','jobId','team','status','note','skills','baijia','aliases','changeLog','createdAt','updatedAt'
-  ]);
+  ])) _changed = true;
   // 絕技/群俠技能清單為所有組織共用，固定寫入共用試算表；
   // 寫入前先合併「共用_技能刪除紀錄」，任何組織刪除的技能都會被過濾掉，
   // 不會因為另一個組織還沒同步到最新狀態而被寫回來
@@ -285,34 +308,36 @@ function saveData(org, payload) {
     skMerged.forEach(function(t){ skillDeletedNames[t.name] = true; });
     writeSheet(shared, '共用_技能刪除紀錄', skMerged, ['name','ts']);
   } catch (e) { /* 技能刪除紀錄處理失敗不影響主要資料儲存 */ }
-  writeSheet(shared, '共用_絕技清單',
-    (payload.skillList || []).filter(function(s){ return !skillDeletedNames[s]; }).map(function(s){ return { name: s }; }), ['name']);
-  writeSheet(shared, '共用_群俠技能清單',
-    (payload.baijiaList || []).filter(function(s){ return !skillDeletedNames[s]; }).map(function(s){ return { name: s }; }), ['name']);
-  writeSheet(ss, prefix + '活動場次',
+  if (writeSheet(shared, '共用_絕技清單',
+    (payload.skillList || []).filter(function(s){ return !skillDeletedNames[s]; }).map(function(s){ return { name: s }; }), ['name'])) _changed = true;
+  if (writeSheet(shared, '共用_群俠技能清單',
+    (payload.baijiaList || []).filter(function(s){ return !skillDeletedNames[s]; }).map(function(s){ return { name: s }; }), ['name'])) _changed = true;
+  if (writeSheet(ss, prefix + '活動場次',
     _mergeNewest(readSheet(ss, prefix + '活動場次', EVENT_JSON), _filterDeleted(payload.events, 'events'), 'events'), [
     'id','name','date','type','eventTime','matchFormat','teamNames','teams','roles','squadRoles','assignedSkills','assignedBaijia','plannedRoster','planSavedAt','createdAt','updatedAt'
-  ]);
-  writeSheet(ss, prefix + '比賽紀錄',
+  ])) _changed = true;
+  if (writeSheet(ss, prefix + '比賽紀錄',
     _mergeNewest(readSheet(ss, prefix + '比賽紀錄', MATCH_JSON), _filterDeleted(payload.matches, 'matches'), 'matches'), [
     'id','date','type','enemy','result','ourCount','enemyCount',
     'notes','videos','participants','players','createdAt','updatedAt'
-  ]);
-  writeSheet(ss, prefix + '報名紀錄',
-    flattenSignups(payload.signups), ['eventId','playerName','status']);
-  logSync(ss, org, payload.timestamp);
+  ])) _changed = true;
+  if (writeSheet(ss, prefix + '報名紀錄',
+    flattenSignups(payload.signups), ['eventId','playerName','status'])) _changed = true;
+  // 同步紀錄只在資料真的有變動時記一筆，沒變動的輪詢寫入不再花時間記錄
+  if (_changed) logSync(ss, org, payload.timestamp);
+  return _changed;
 }
 
 // ── 工具：寫分頁 ─────────────────────────────────────────
+// 回傳 true=內容有變動已重寫 / false=內容完全相同，跳過重寫。
+// 跳過不必要的「清空+重寫+格式化」是同步提速的關鍵之一：
+// 每次同步通常只有一兩張分頁真的有變，其他分頁原本也全部重寫，白白多花數秒。
 function writeSheet(ss, name, data, headers) {
   var sheet = ss.getSheetByName(name);
-  if (!sheet) sheet = ss.insertSheet(name);
-  else sheet.clear();
+  var isNew = false;
+  if (!sheet) { sheet = ss.insertSheet(name); isNew = true; }
 
-  sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
-  if (!data || !data.length) return;
-
-  var rows = data.map(function(item) {
+  var rows = (data || []).map(function(item) {
     return headers.map(function(h) {
       var v = item[h];
       if (v === null || v === undefined) return '';
@@ -320,12 +345,39 @@ function writeSheet(ss, name, data, headers) {
       return String(v);
     });
   });
-  var range = sheet.getRange(2, 1, rows.length, headers.length);
-  // 強制整個資料範圍為純文字格式，避免試算表把 "20:00" 之類的字串
-  // 自動解讀成時間序號（會導致約戰活動時間讀回來變成 1899-12-30）
-  range.setNumberFormat('@');
-  range.setValues(rows);
-  try { sheet.autoResizeColumns(1, headers.length); } catch(e) {}
+
+  // 內容比對：現有分頁與要寫入的內容完全相同 → 直接跳過
+  if (!isNew) {
+    try {
+      var cur = sheet.getDataRange().getValues();
+      var same = (cur.length === rows.length + 1) && (cur[0].length === headers.length);
+      if (same) {
+        for (var c = 0; c < headers.length && same; c++) {
+          if (String(cur[0][c] === null || cur[0][c] === undefined ? '' : cur[0][c]) !== headers[c]) same = false;
+        }
+      }
+      for (var r = 0; r < rows.length && same; r++) {
+        for (var c2 = 0; c2 < headers.length && same; c2++) {
+          var cv = cur[r + 1][c2];
+          if (String(cv === null || cv === undefined ? '' : cv) !== rows[r][c2]) same = false;
+        }
+      }
+      if (same) return false;
+    } catch (e) { /* 比對失敗就照常重寫，安全優先 */ }
+  }
+
+  sheet.clear();
+  sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+  if (rows.length) {
+    var range = sheet.getRange(2, 1, rows.length, headers.length);
+    // 強制整個資料範圍為純文字格式，避免試算表把 "20:00" 之類的字串
+    // 自動解讀成時間序號（會導致約戰活動時間讀回來變成 1899-12-30）
+    range.setNumberFormat('@');
+    range.setValues(rows);
+  }
+  // 自動調整欄寬很花時間，只在分頁第一次建立時做一次（純視覺用途，不影響資料）
+  if (isNew) { try { sheet.autoResizeColumns(1, headers.length); } catch(e) {} }
+  return true;
 }
 
 // ── 工具：讀分頁 ─────────────────────────────────────────
