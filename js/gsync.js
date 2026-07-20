@@ -111,6 +111,14 @@ async function syncLoad(silent) {
     if (data && data.error) throw new Error(data.error);
     if (!data) throw new Error('無資料回應');
 
+    // 維護狀態橫幅：後端開啟維護→所有裝置顯示提醒；關閉→自動消失並補上傳
+    if (data.maintenance) _showMaintBanner(data.maintenanceMsg);
+    else {
+      _hideMaintBanner();
+      // 維護剛結束時，若本機還有累積未上傳的變更，馬上補送
+      if (_pendingWrite) syncWrite();
+    }
+
     // 安全檢查：如果在等待雲端回應期間，模式已經被切換了，這批資料就不能再套用，
     // 直接放棄這次結果（下次同步輪到該模式時會重新抓一次），避免寫錯地方
     if (CUR_MODE !== reqMode || CUR_ORG !== reqOrg) {
@@ -260,6 +268,39 @@ async function _pushToCloud(payload){
     body: JSON.stringify(payload),
   });
   if (!res.ok) throw new Error('HTTP ' + res.status);
+  // 解析後端回應：維護中／忙碌中都不算成功，變更要留在本機繼續重試
+  let body = null;
+  try { body = await res.json(); } catch(_){}
+  if (body && body.maintenance) {
+    _showMaintBanner(body.maintenanceMsg);
+    const e = new Error(body.maintenanceMsg || '系統維護中');
+    e.maintenance = true;
+    throw e;
+  }
+  if (body && body.busy) {
+    const e = new Error('伺服器忙碌，稍後自動重試');
+    e.busy = true;
+    throw e;
+  }
+  if (body && body.error) throw new Error(body.error);
+}
+
+// ─── 維護模式橫幅：後端開啟維護時，所有裝置 30 秒內會看到提醒 ──
+function _showMaintBanner(msg){
+  let el = document.getElementById('maint-banner');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'maint-banner';
+    el.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:9999;background:#b45309;color:#fff;'
+      + 'padding:10px 14px;font-size:14px;line-height:1.5;text-align:center;box-shadow:0 2px 8px rgba(0,0,0,.3)';
+    document.body.appendChild(el);
+    document.body.style.paddingTop = '44px'; // 避免橫幅遮住頂欄
+  }
+  el.textContent = '🛠 ' + (msg || '系統維護更新中，您的修改已保存在此裝置，維護結束後會自動上傳');
+}
+function _hideMaintBanner(){
+  const el = document.getElementById('maint-banner');
+  if (el) { el.remove(); document.body.style.paddingTop = ''; }
 }
 
 async function _doWrite() {
@@ -277,10 +318,17 @@ async function _doWrite() {
     updateSyncUI('ok', '✅ ' + now.slice(5, 16));
   } catch (err) {
     console.warn('syncWrite error:', err.message);
-    updateSyncUI('offline', '📴 待同步（將自動重試）');
-    // 自動重試，避免變更因為一時網路問題而遺失、甚至被舊資料覆蓋回來
-    clearTimeout(_writeRetryTimer);
-    _writeRetryTimer = setTimeout(()=>{ if (_pendingWrite) _doWrite(); }, 15000);
+    if (err.maintenance) {
+      // 維護中：變更安全保存在本機，改用較長間隔（60秒）輕量重試，維護結束即自動補上傳
+      updateSyncUI('offline', '🛠 維護中（變更已保留）');
+      clearTimeout(_writeRetryTimer);
+      _writeRetryTimer = setTimeout(()=>{ if (_pendingWrite) _doWrite(); }, 60000);
+    } else {
+      updateSyncUI('offline', '📴 待同步（將自動重試）');
+      // 自動重試，避免變更因為一時網路問題而遺失、甚至被舊資料覆蓋回來
+      clearTimeout(_writeRetryTimer);
+      _writeRetryTimer = setTimeout(()=>{ if (_pendingWrite) _doWrite(); }, 15000);
+    }
   } finally {
     _isSyncing = false;
   }
@@ -313,6 +361,13 @@ async function syncWriteNowFast(){
     return true;
   }catch(err){
     console.warn('syncWriteNowFast failed:', err.message);
+    if (err.maintenance) {
+      // 維護中：橫幅已顯示，變更留在本機，維護結束後由背景重試/輪詢自動補上傳
+      updateSyncUI('offline', '🛠 維護中（變更已保留）');
+      clearTimeout(_writeRetryTimer);
+      _writeRetryTimer = setTimeout(()=>{ if (_pendingWrite) _doWrite(); }, 60000);
+      return 'maintenance';
+    }
     updateSyncUI('offline', '📴 待同步（背景自動重試）');
     // 失敗不卡使用者，改由背景每15秒自動重試，直到成功
     clearTimeout(_writeRetryTimer);
@@ -390,6 +445,13 @@ async function syncWriteNow(maxRetries){
       return true;
     }catch(err){
       console.warn('syncWriteNow attempt ' + (i+1) + ' failed:', err.message);
+      if (err.maintenance) {
+        // 維護中不必連續重試：變更留在本機，改由長間隔背景重試，維護結束自動補上傳
+        updateSyncUI('offline', '🛠 維護中（變更已保留）');
+        clearTimeout(_writeRetryTimer);
+        _writeRetryTimer = setTimeout(()=>{ if (_pendingWrite) _doWrite(); }, 60000);
+        return 'maintenance';
+      }
       if (i < maxRetries-1) await new Promise(r=>setTimeout(r, 700*(i+1)));
     }
   }
