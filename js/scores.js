@@ -22,7 +22,7 @@ const SCORE_BEHAVIORS = [
   { key:'b2', name:'行為2：出席 1 天的幫戰（雙周賽也算 1 天）',        auto:'系統自動（依比賽紀錄）', def:1 },
   { key:'b3', name:'行為3：比賽全程開語音有效溝通',                    auto:'管理端手動', def:3 },
   { key:'b4', name:'行為4：上傳比賽個人視角影片（影片有誤可手動扣分）', auto:'系統自動（依影片上傳）', def:2 },
-  { key:'b5', name:'行為5：戰後復盤',                                  auto:'管理端手動', def:2 },
+  { key:'b5', name:'行為5：戰後復盤參與',                                  auto:'管理端手動', def:2 },
 ];
 const SCORE_DEFAULT_REWARDS = [
   { need:30, item:'月卡、MyCard點數170', qty:10 },
