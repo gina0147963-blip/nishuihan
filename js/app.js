@@ -260,6 +260,10 @@ function renderPane(tab, pane){
   if(tab==='a-stats')  renderAdminStats(pane);
   if(tab==='a-signup-mgr') renderAdminSignupMgr(pane);
   if(tab==='a-skills') renderAdminSkills(pane);
+  if(tab==='p-score' && typeof renderPlayerScore==='function') renderPlayerScore(pane);
+  if(tab==='a-scores' && typeof renderAdminScores==='function') renderAdminScores(pane);
+  // 積分分頁只在啟用積分機制的組織顯示（白月燦星、白月梵星）
+  if(typeof updateScoreTabsVisibility==='function') updateScoreTabsVisibility();
 }
 
 // 全域錯誤提示：任何未捕捉錯誤直接顯示，方便手機除錯
