@@ -90,6 +90,31 @@ function doGet(e) {
                 orgs: ORGS.length, time: new Date().toISOString() });
 }
 
+// ============================================================
+// ★★ 維護模式 ★★
+// 你要更新網站/後端前，先在 Apps Script 編輯器選 maintenanceOn 按執行▶，
+// 所有裝置會立刻（30秒內）看到「系統維護中」橫幅，期間成員的修改
+// 只會保存在各自裝置本機、不會寫入雲端（避免寫進更新到一半的狀態）。
+// 更新完成後執行 maintenanceOff，各裝置累積的變更會自動上傳合併。
+// ============================================================
+function maintenanceOn(msg) {
+  var props = PropertiesService.getScriptProperties();
+  props.setProperty('maintenance', '1');
+  props.setProperty('maintenance_msg', String(msg || '系統維護更新中，您的修改已保存在此裝置，維護結束後會自動上傳，請勿清除瀏覽器資料'));
+  console.log('🛠 維護模式已開啟。更新完成後記得執行 maintenanceOff()');
+}
+function maintenanceOff() {
+  var props = PropertiesService.getScriptProperties();
+  props.deleteProperty('maintenance');
+  props.deleteProperty('maintenance_msg');
+  console.log('✅ 維護模式已關閉，各裝置的變更會自動上傳合併。');
+}
+function _maintInfo() {
+  var props = PropertiesService.getScriptProperties();
+  var on = props.getProperty('maintenance') === '1';
+  return { on: on, msg: on ? (props.getProperty('maintenance_msg') || '系統維護中') : '' };
+}
+
 // ── POST：處理所有請求（orgs + adminAuth + load + sync）──
 function doPost(e) {
   try {
@@ -111,14 +136,30 @@ function doPost(e) {
     }
 
     if (action === 'load') {
-      // 讀取資料：依組織路由到各自的試算表
+      // 讀取資料：依組織路由到各自的試算表（附帶維護狀態讓前端顯示橫幅）
       const data = loadData(_resolveOrg(payload));
+      const mi = _maintInfo();
+      data.maintenance    = mi.on;
+      data.maintenanceMsg = mi.msg;
       return _out(data);
     }
 
     if (action === 'sync') {
-      // 寫入資料：依組織路由到各自的試算表
-      saveData(_resolveOrg(payload), payload);
+      // 維護模式中：拒絕寫入（前端會把變更留在本機並自動重試，維護結束後補上傳）
+      const mi = _maintInfo();
+      if (mi.on) return _out({ ok: false, maintenance: true, maintenanceMsg: mi.msg });
+
+      // ★ 上鎖：多台裝置同時同步時排隊寫入，避免「清空分頁→重寫」互相踩掉
+      const lock = LockService.getScriptLock();
+      if (!lock.tryLock(25000)) {
+        // 排隊超過25秒拿不到鎖，回報失敗讓前端稍後自動重試（比寫壞資料好）
+        return _out({ ok: false, busy: true, error: '伺服器忙碌中，請稍後自動重試' });
+      }
+      try {
+        saveData(_resolveOrg(payload), payload);
+      } finally {
+        lock.releaseLock();
+      }
       return _out({ ok: true, timestamp: payload.timestamp });
     }
 
@@ -195,7 +236,34 @@ function saveData(org, payload) {
     return (list || []).filter(function(item){ return !(item && item.id && deletedIds[coll][String(item.id)]); });
   }
 
-  writeSheet(ss, prefix + '成員清單', _filterDeleted(payload.members, 'members'), [
+  // ★ 後端逐筆合併（以最新版本為主）：
+  // 不再無條件用上傳的整包資料覆蓋試算表，而是先讀出雲端現有資料，
+  // 依 id 比對 updatedAt，「較新的那筆」勝出（同時間以這次上傳為準）。
+  // 這樣即使某台裝置快取過舊（例如網站更新後、或許久未開啟的手機），
+  // 它上傳的舊資料也蓋不掉雲端較新的紀錄；雲端獨有的資料也不會因為
+  // 上傳包裡沒有而消失（刪除一律必須走「刪除紀錄」墓碑，不能靠缺漏）。
+  function _mergeNewest(existingRows, incomingRows, coll) {
+    var map = {}, order = [];
+    function put(item, isIncoming) {
+      if (!item || !item.id) return;
+      var id = String(item.id);
+      if (deletedIds[coll] && deletedIds[coll][id]) return; // 已刪除的一律排除
+      var prev = map[id];
+      if (!prev) { map[id] = item; order.push(id); return; }
+      var pu = Number(prev.updatedAt) || 0, iu = Number(item.updatedAt) || 0;
+      if (isIncoming ? iu >= pu : iu > pu) map[id] = item; // 新的優先；平手以這次上傳為準
+    }
+    (existingRows || []).forEach(function(r){ put(r, false); });
+    (incomingRows || []).forEach(function(r){ put(r, true); });
+    return order.map(function(id){ return map[id]; });
+  }
+
+  var MEMBER_JSON = ['skills','baijia','aliases','changeLog'];
+  var EVENT_JSON  = ['teams','roles','squadRoles','assignedSkills','assignedBaijia','teamNames','plannedRoster'];
+  var MATCH_JSON  = ['participants','players','videos'];
+
+  writeSheet(ss, prefix + '成員清單',
+    _mergeNewest(readSheet(ss, prefix + '成員清單', MEMBER_JSON), _filterDeleted(payload.members, 'members'), 'members'), [
     'id','name','jobId','team','status','note','skills','baijia','aliases','changeLog','createdAt','updatedAt'
   ]);
   // 絕技/群俠技能清單為所有組織共用，固定寫入共用試算表；
@@ -221,10 +289,12 @@ function saveData(org, payload) {
     (payload.skillList || []).filter(function(s){ return !skillDeletedNames[s]; }).map(function(s){ return { name: s }; }), ['name']);
   writeSheet(shared, '共用_群俠技能清單',
     (payload.baijiaList || []).filter(function(s){ return !skillDeletedNames[s]; }).map(function(s){ return { name: s }; }), ['name']);
-  writeSheet(ss, prefix + '活動場次', _filterDeleted(payload.events, 'events'), [
+  writeSheet(ss, prefix + '活動場次',
+    _mergeNewest(readSheet(ss, prefix + '活動場次', EVENT_JSON), _filterDeleted(payload.events, 'events'), 'events'), [
     'id','name','date','type','eventTime','matchFormat','teamNames','teams','roles','squadRoles','assignedSkills','assignedBaijia','plannedRoster','planSavedAt','createdAt','updatedAt'
   ]);
-  writeSheet(ss, prefix + '比賽紀錄', _filterDeleted(payload.matches, 'matches'), [
+  writeSheet(ss, prefix + '比賽紀錄',
+    _mergeNewest(readSheet(ss, prefix + '比賽紀錄', MATCH_JSON), _filterDeleted(payload.matches, 'matches'), 'matches'), [
     'id','date','type','enemy','result','ourCount','enemyCount',
     'notes','videos','participants','players','createdAt','updatedAt'
   ]);
@@ -368,7 +438,7 @@ function dailyBackupCheck() {
       while (oldFiles.hasNext()) { oldFiles.next().setTrashed(true); }
       var srcFile = DriveApp.getFileById(ssId);
       var newFile = srcFile.makeCopy(slotName, folder);
-      newFile.setDescription('自動備份時間：' + Utilities.formatDate(now, 'Asia/Taipei', 'yyyy-MM-dd HH:mm'));
+      newFile.setDescription('自動備份時間：' + Utilities.formatDate(now, 'Asia/Taipei', 'yyyy-MM-dd HH:mm') + '｜來源ID:' + ssId);
 
       props.setProperty('backup_last_' + ssId, now.toISOString());
       props.setProperty('backup_slot_' + ssId, String((slot + 1) % BACKUP_SLOT_COUNT));
@@ -398,4 +468,135 @@ function uninstallBackupTrigger() {
     if (t.getHandlerFunction() === 'dailyBackupCheck') { ScriptApp.deleteTrigger(t); removed++; }
   });
   console.log('已移除 ' + removed + ' 個備份排程。');
+}
+
+// ============================================================
+// ★★ 一鍵還原系統（從自動備份救回遺失資料）★★
+// 資料遺失時的救援流程（都在 Apps Script 編輯器操作）：
+//   1. 上方函式選單選「listBackups」按執行▶ → 查看「執行紀錄」，
+//      會列出目前所有備份檔名稱與備份時間，挑一份遺失前的備份
+//   2. 打開下方 RESTORE_BACKUP_NAME，把挑好的備份檔名稱貼進引號裡
+//   3. 函式選單選「restoreFromBackup」按執行▶
+//
+// 還原採「合併」而非「覆蓋」：逐筆比對備份與現有資料，
+// ▸ 只存在備份裡的（＝遺失的資料）→ 補回來
+// ▸ 兩邊都有的 → 比對 updatedAt，【以較新的版本為主】，
+//   所以還原「不會」把成員在遺失後新增/修改的內容洗掉
+// ▸ 30天內走正常流程刪除的資料 → 預設不復活（尊重刪除紀錄）；
+//   若連刪除的也要救回，把 RESTORE_REVIVE_DELETED 改成 true
+// ============================================================
+var RESTORE_BACKUP_NAME   = '';    // ← 貼入 listBackups 列出的備份檔名稱
+var RESTORE_REVIVE_DELETED = false; // true = 連「刪除紀錄」內的資料也一併復活
+
+function listBackups() {
+  var folder = _getOrCreateBackupFolder();
+  var files = folder.getFiles();
+  var found = 0;
+  while (files.hasNext()) {
+    var f = files.next();
+    console.log('📦 ' + f.getName() + '｜' + (f.getDescription() || '(無描述)'));
+    found++;
+  }
+  if (!found) console.log('（目前沒有任何備份檔，請先確認 installBackupTrigger 已執行過）');
+  else console.log('共 ' + found + ' 份。複製要還原的檔名，貼入 RESTORE_BACKUP_NAME 後執行 restoreFromBackup');
+}
+
+function restoreFromBackup() {
+  if (!RESTORE_BACKUP_NAME) throw new Error('請先把備份檔名稱貼入程式碼上方的 RESTORE_BACKUP_NAME，儲存後再執行');
+  var folder = _getOrCreateBackupFolder();
+  var it = folder.getFilesByName(RESTORE_BACKUP_NAME);
+  if (!it.hasNext()) throw new Error('找不到備份檔「' + RESTORE_BACKUP_NAME + '」，請先執行 listBackups 確認名稱');
+  var bakFile = it.next();
+
+  // 從備份檔描述取出來源試算表ID，自動對應要還原到哪一份主試算表
+  var desc = bakFile.getDescription() || '';
+  var m = desc.match(/來源ID:([A-Za-z0-9_\-]+)/);
+  if (!m) throw new Error('這份備份缺少來源ID標記（較舊的備份檔）。請等新備份產生後再用，或手動開啟備份複本比對救回');
+  var targetId = m[1];
+
+  var bak = SpreadsheetApp.openById(bakFile.getId());
+  var main = SpreadsheetApp.openById(targetId);
+
+  // 讀取主表的刪除紀錄，決定哪些 id 不復活
+  var deletedByColl = { members:{}, events:{}, matches:{} };
+  if (!RESTORE_REVIVE_DELETED) {
+    main.getSheets().forEach(function(sh){
+      if (sh.getName().indexOf('刪除紀錄') === -1) return;
+      readSheet(main, sh.getName()).forEach(function(t){
+        if (t && t.coll && t.id && deletedByColl[t.coll]) deletedByColl[t.coll][String(t.id)] = true;
+      });
+    });
+  }
+
+  var JSON_FIELDS = {
+    '成員清單': ['skills','baijia','aliases','changeLog'],
+    '活動場次': ['teams','roles','squadRoles','assignedSkills','assignedBaijia','teamNames','plannedRoster'],
+    '比賽紀錄': ['participants','players','videos'],
+  };
+  var HEADERS = {
+    '成員清單': ['id','name','jobId','team','status','note','skills','baijia','aliases','changeLog','createdAt','updatedAt'],
+    '活動場次': ['id','name','date','type','eventTime','matchFormat','teamNames','teams','roles','squadRoles','assignedSkills','assignedBaijia','plannedRoster','planSavedAt','createdAt','updatedAt'],
+    '比賽紀錄': ['id','date','type','enemy','result','ourCount','enemyCount','notes','videos','participants','players','createdAt','updatedAt'],
+  };
+  var COLL = { '成員清單':'members', '活動場次':'events', '比賽紀錄':'matches' };
+
+  var lock = LockService.getScriptLock();
+  lock.waitLock(30000); // 還原期間擋住同步寫入，避免互相干擾
+  try {
+    bak.getSheets().forEach(function(sh){
+      var name = sh.getName();
+
+      // 逐筆合併類：成員清單／活動場次／比賽紀錄（含各組織前綴的分頁）
+      Object.keys(COLL).forEach(function(suffix){
+        if (name.indexOf(suffix) === -1) return;
+        var coll = COLL[suffix];
+        var bakRows  = readSheet(bak,  name, JSON_FIELDS[suffix]);
+        var mainRows = readSheet(main, name, JSON_FIELDS[suffix]);
+        var map = {}, order = [];
+        function put(item){
+          if (!item || !item.id) return;
+          var id = String(item.id);
+          if (deletedByColl[coll][id]) return;
+          var prev = map[id];
+          if (!prev) { map[id] = item; order.push(id); return; }
+          var pu = Number(prev.updatedAt)||0, iu = Number(item.updatedAt)||0;
+          if (iu > pu) map[id] = item; // 以較新版本為主（現有較新→保留現有，不會洗掉新資料）
+        }
+        bakRows.forEach(put);
+        mainRows.forEach(put);
+        writeSheet(main, name, order.map(function(id){ return map[id]; }), HEADERS[suffix]);
+        console.log('✅ ' + name + '：合併完成，共 ' + order.length + ' 筆（備份補回或較新者已套用）');
+      });
+
+      // 報名紀錄：只補缺（現有回覆一律視為較新，不覆蓋）
+      if (name.indexOf('報名紀錄') !== -1) {
+        var bakS  = readSheet(bak,  name);
+        var mainS = readSheet(main, name);
+        var have = {};
+        mainS.forEach(function(r){ if(r.eventId && r.playerName) have[r.eventId+'|'+r.playerName] = true; });
+        var merged = mainS.slice(), fill = 0;
+        bakS.forEach(function(r){
+          if (!r.eventId || !r.playerName) return;
+          if (!have[r.eventId+'|'+r.playerName]) { merged.push(r); fill++; }
+        });
+        if (fill) writeSheet(main, name, merged, ['eventId','playerName','status']);
+        console.log('✅ ' + name + '：補回 ' + fill + ' 筆報名');
+      }
+
+      // 技能清單：聯集（備份有、現在沒有的補回）
+      if (name.indexOf('絕技清單') !== -1 || name.indexOf('群俠技能清單') !== -1) {
+        var bakN  = readSheet(bak,  name).map(function(r){ return String(r.name||''); }).filter(Boolean);
+        var mainN = readSheet(main, name).map(function(r){ return String(r.name||''); }).filter(Boolean);
+        var set = {}; var out = [];
+        mainN.concat(bakN).forEach(function(n){ if(!set[n]){ set[n]=1; out.push({name:n}); } });
+        if (out.length > mainN.length) writeSheet(main, name, out, ['name']);
+        console.log('✅ ' + name + '：補回 ' + (out.length - mainN.length) + ' 個技能');
+      }
+      // 刪除紀錄、同步紀錄：不還原（保持現況）
+    });
+    console.log('🎉 還原完成！各裝置最慢 30 秒內會自動同步到合併後的資料。');
+    console.log('提醒：還原後建議把 RESTORE_BACKUP_NAME 清回空字串，避免日後誤按重複還原。');
+  } finally {
+    lock.releaseLock();
+  }
 }
