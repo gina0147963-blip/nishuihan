@@ -68,13 +68,52 @@ async function syncInit() {
   S.setConfig({ ...S.config(), gsWebhook: GS_URL });
   updateSyncUI('loading', '讀取中...');
   await syncLoad(true);
-  // 自動接收最新：每 60 秒背景讀取一次 + 切回分頁時立即讀取
+  // 自動接收最新（提速版）：每 5 秒問一次超輕量「版本號」（不讀試算表，極快），
+  // 版本有變才抓完整資料 → 別人改完到你看到，從最久 30 秒縮短為通常 5~10 秒。
+  // 每第 12 次（約 60 秒）仍做一次完整讀取保底，涵蓋跨組織共用資料等邊角情況。
   if(!window._autoPollTimer){
-    window._autoPollTimer = setInterval(()=>{ if(_syncUrl && !_isSyncing) syncLoad(true); }, 30000);
+    window._autoPollTimer = setInterval(_pollTick, 5000);
     document.addEventListener('visibilitychange', ()=>{
       if(document.visibilityState==='visible' && _syncUrl && !_isSyncing) syncLoad(true);
     });
   }
+}
+
+let _lastRev   = null;  // 最後一次看到的雲端資料版本號
+let _pollCount = 0;
+let _verOk     = true;  // 後端是否支援 ver 查詢（尚未更新後端時自動退回舊式輪詢）
+
+async function _pollTick(){
+  if(!_syncUrl || _isSyncing) return;
+  _pollCount++;
+  // 後端不支援 ver（還沒部署新版）→ 退回原本行為：每 30 秒完整讀取一次
+  if(!_verOk){ if(_pollCount % 6 === 0) syncLoad(true); return; }
+  // 每 60 秒完整讀取一次保底
+  if(_pollCount % 12 === 0){ syncLoad(true); return; }
+  try{
+    const res = await fetch(_syncUrl, {
+      method:'POST',
+      headers:{'Content-Type':'text/plain;charset=utf-8'},
+      body: JSON.stringify({ action:'ver', mode:CUR_MODE, org:CUR_ORG }),
+    });
+    if(!res.ok) return;
+    const d = await res.json();
+    if(d && d.error){
+      if(/unknown action/.test(String(d.error))) _verOk=false; // 舊後端：改走退回模式
+      return;
+    }
+    if(!d || !d.ok) return;
+    // 維護狀態即時反映（最慢 5 秒就會看到橫幅出現/消失）
+    if(d.maintenance) _showMaintBanner(d.maintenanceMsg);
+    else { _hideMaintBanner(); if(_pendingWrite) syncWrite(); }
+    if(d.rev !== undefined){
+      if(_lastRev === null){ _lastRev = d.rev; return; }
+      if(String(d.rev) !== String(_lastRev)){
+        _lastRev = d.rev;
+        syncLoad(true); // 版本變了 → 有人更新了資料，立即抓取
+      }
+    }
+  }catch(_){ /* 網路暫時失敗就等下一輪 */ }
 }
 
 // ─── 讀取（POST 方式，避免 CORS）────────────────────────
@@ -111,6 +150,7 @@ async function syncLoad(silent) {
     if (data && data.error) throw new Error(data.error);
     if (!data) throw new Error('無資料回應');
 
+    if (data.rev !== undefined) _lastRev = data.rev; // 記錄目前資料版本號供輕量輪詢比對
     // 維護狀態橫幅：後端開啟維護→所有裝置顯示提醒；關閉→自動消失並補上傳
     if (data.maintenance) _showMaintBanner(data.maintenanceMsg);
     else {
@@ -238,7 +278,7 @@ function syncWrite() {
   if (!_syncUrl || _suppressWrite) return;
   _pendingWrite = true;
   clearTimeout(_autoSaveTimer);
-  _autoSaveTimer = setTimeout(_doWrite, 2000);
+  _autoSaveTimer = setTimeout(_doWrite, 500);
 }
 
 // 把「要送出的模式」和「當下的資料」在同一個時間點一起打包，避免兩者在跨越
@@ -283,6 +323,8 @@ async function _pushToCloud(payload){
     throw e;
   }
   if (body && body.error) throw new Error(body.error);
+  // 記下這次寫入後的雲端版本號：自己造成的版本變動不需要再觸發一次完整讀取
+  if (body && body.rev !== undefined) _lastRev = body.rev;
 }
 
 // ─── 維護模式橫幅：後端開啟維護時，所有裝置 30 秒內會看到提醒 ──
@@ -305,7 +347,7 @@ function _hideMaintBanner(){
 
 async function _doWrite() {
   if (!_syncUrl) return;
-  if (_isSyncing) { clearTimeout(_autoSaveTimer); _autoSaveTimer = setTimeout(_doWrite, 1000); return; }
+  if (_isSyncing) { clearTimeout(_autoSaveTimer); _autoSaveTimer = setTimeout(_doWrite, 500); return; }
   _isSyncing = true;
   updateSyncUI('loading', '儲存中...');
   const payload = _buildSyncPayload(CUR_MODE, CUR_ORG); // 在任何 await 之前，同一瞬間打包好模式+組織標籤與資料內容
