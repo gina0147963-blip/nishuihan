@@ -86,7 +86,7 @@ function _out(obj) {
 function doGet(e) {
   let sheetOk=false, sheetName='';
   try { const ss=_sharedSS(); sheetOk=true; sheetName=ss.getName(); } catch(e) { sheetName=e.message; }
-  return _out({ ok: true, message: 'Apps Script v7 (multi-org) is running', sheetOk: sheetOk, sheet: sheetName,
+  return _out({ ok: true, message: 'Apps Script v8 (multi-org + scores) is running', sheetOk: sheetOk, sheet: sheetName,
                 orgs: ORGS.length, time: new Date().toISOString() });
 }
 
@@ -223,9 +223,17 @@ function loadData(org) {
     signups[row.eventId][row.playerName] = row.status;
   });
 
+  // 積分機制（僅白月燦星/白月梵星前端會使用，其他組織讀到也不影響）
+  var scoreCfg = null;
+  var cfgRows = readSheet(ss, prefix + '積分設定');
+  if (cfgRows.length && cfgRows[0].json) {
+    try { scoreCfg = JSON.parse(cfgRows[0].json); } catch(e) {}
+  }
+  const scoreLog = readSheet(ss, prefix + '積分紀錄');
+
   return { members: members, skillList: skillList, baijiaList: baijiaList,
            events: events, matches: matches, signups: signups, tombstones: tombstones,
-           skillTombstones: skillTombstones };
+           skillTombstones: skillTombstones, scoreCfg: scoreCfg, scoreLog: scoreLog };
 }
 
 // ── 寫入資料 ─────────────────────────────────────────────
@@ -323,6 +331,28 @@ function saveData(org, payload) {
   ])) _changed = true;
   if (writeSheet(ss, prefix + '報名紀錄',
     flattenSignups(payload.signups), ['eventId','playerName','status'])) _changed = true;
+
+  // 積分手動紀錄：逐筆 id+updatedAt 合併（作廢用 void 標記，紀錄本身永不刪除，不需墓碑）
+  if (Array.isArray(payload.scoreLog)) {
+    var existingScoreLog = readSheet(ss, prefix + '積分紀錄');
+    deletedIds.scores = {}; // 積分紀錄不走刪除機制，給合併函式一個空的刪除表
+    var mergedScoreLog = _mergeNewest(existingScoreLog, payload.scoreLog, 'scores');
+    if (writeSheet(ss, prefix + '積分紀錄', mergedScoreLog,
+      ['id','member','evId','date','behavior','label','points','note','void','ts','updatedAt'])) _changed = true;
+  }
+  // 積分設定：整包比 updatedAt，新者為主（避免舊裝置把管理員剛改好的分數蓋回去）
+  if (payload.scoreCfg && typeof payload.scoreCfg === 'object') {
+    var curCfgRows = readSheet(ss, prefix + '積分設定');
+    var curU = 0;
+    if (curCfgRows.length && curCfgRows[0].json) {
+      try { curU = Number(JSON.parse(curCfgRows[0].json).updatedAt) || 0; } catch(e) {}
+    }
+    var inU = Number(payload.scoreCfg.updatedAt) || 0;
+    if (inU >= curU) {
+      if (writeSheet(ss, prefix + '積分設定',
+        [{ json: JSON.stringify(payload.scoreCfg), updatedAt: String(inU) }], ['json','updatedAt'])) _changed = true;
+    }
+  }
   // 同步紀錄只在資料真的有變動時記一筆，沒變動的輪詢寫入不再花時間記錄
   if (_changed) logSync(ss, org, payload.timestamp);
   return _changed;
@@ -570,7 +600,7 @@ function restoreFromBackup() {
   var main = SpreadsheetApp.openById(targetId);
 
   // 讀取主表的刪除紀錄，決定哪些 id 不復活
-  var deletedByColl = { members:{}, events:{}, matches:{} };
+  var deletedByColl = { members:{}, events:{}, matches:{}, scores:{} }; // scores 無刪除機制，恆為空
   if (!RESTORE_REVIVE_DELETED) {
     main.getSheets().forEach(function(sh){
       if (sh.getName().indexOf('刪除紀錄') === -1) return;
@@ -581,6 +611,7 @@ function restoreFromBackup() {
   }
 
   var JSON_FIELDS = {
+    '積分紀錄': [],
     '成員清單': ['skills','baijia','aliases','changeLog'],
     '活動場次': ['teams','roles','squadRoles','assignedSkills','assignedBaijia','teamNames','plannedRoster'],
     '比賽紀錄': ['participants','players','videos'],
@@ -589,8 +620,9 @@ function restoreFromBackup() {
     '成員清單': ['id','name','jobId','team','status','note','skills','baijia','aliases','changeLog','createdAt','updatedAt'],
     '活動場次': ['id','name','date','type','eventTime','matchFormat','teamNames','teams','roles','squadRoles','assignedSkills','assignedBaijia','plannedRoster','planSavedAt','createdAt','updatedAt'],
     '比賽紀錄': ['id','date','type','enemy','result','ourCount','enemyCount','notes','videos','participants','players','createdAt','updatedAt'],
+    '積分紀錄': ['id','member','evId','date','behavior','label','points','note','void','ts','updatedAt'],
   };
-  var COLL = { '成員清單':'members', '活動場次':'events', '比賽紀錄':'matches' };
+  var COLL = { '成員清單':'members', '活動場次':'events', '比賽紀錄':'matches', '積分紀錄':'scores' };
 
   var lock = LockService.getScriptLock();
   lock.waitLock(30000); // 還原期間擋住同步寫入，避免互相干擾
