@@ -401,27 +401,47 @@ function _doMove(targetKey,slotIdx){
   const ev=events.find(x=>x.id===_curEventId); if(!ev) return;
   ensureTeams(ev);
   if(!ev.teams[targetKey]) ev.teams[targetKey]=[];
-  // 全域去重：先從所有位置移除該玩家，避免重複卡片
-  Object.keys(ev.teams).forEach(k=>{ if(k!==targetKey) _removeFromKey(ev,dragName,k); });
+
   if(targetKey==='reserve'){
+    // 全域去重後放入候補
+    Object.keys(ev.teams).forEach(k=>{ if(k!=='reserve') _removeFromKey(ev,dragName,k); });
     _removeFromKey(ev,dragName,dragFrom);
     if(!ev.teams.reserve.includes(dragName)) ev.teams.reserve.push(dragName);
-  } else if(slotIdx!==null){
-    const occupant=(ev.teams[targetKey]||[])[slotIdx];
-    _removeFromKey(ev,dragName,dragFrom);
-    while(ev.teams[targetKey].length<=slotIdx) ev.teams[targetKey].push(null);
-    if(occupant&&occupant!==dragName){
-      ev.teams[targetKey][slotIdx]=dragName;
-      ev.teams.reserve.push(occupant);
-    } else {
-      ev.teams[targetKey][slotIdx]=dragName;
-    }
+    S.setEvents(events); dragName=null; dragFrom=null; refreshLineup(); return;
+  }
+
+  if(slotIdx!==null){
+    // ── 拖到某個「格子」：採「插入 + 其餘自動下移」，不再把原佔用者踢去候補 ──
+    // 先把目標小隊壓實成「無空洞」的名單（只留有人的格子，長度即實際人數）
+    const compact=(ev.teams[targetKey]||[]).filter(Boolean);
+    const sameSquad=(dragFrom===targetKey);
+    // 從來源移除被拖曳者（同隊移動時 compact 內也要移掉，才能重新插入到指定位置）
+    let list=compact.filter(n=>n!==dragName);
+    // 若不是同一小隊，先從原本所在的其他位置移除
+    if(!sameSquad){ Object.keys(ev.teams).forEach(k=>{ if(k!==targetKey) _removeFromKey(ev,dragName,k); }); }
+    // 插入點：不可超過目前實際人數（避免在空洞後面插出斷層）
+    const insertAt=Math.min(slotIdx, list.length);
+    list.splice(insertAt, 0, dragName);
+    // 溢出處理：小隊最多 SQUAD_SIZE 人，超出的最後一位自動移到候補
+    let overflow=[];
+    if(list.length>SQUAD_SIZE){ overflow=list.slice(SQUAD_SIZE); list=list.slice(0,SQUAD_SIZE); }
+    ev.teams[targetKey]=list;
+    // 溢出的成員移回「成員池」（左側原本的位置）：從所有隊伍與候補都移除，變回未分配狀態，
+    // 而不是塞進候補區；並清掉其特殊角色標記（砲手/指揮隨位置失效）
+    overflow.forEach(n=>{
+      if(!n) return;
+      Object.keys(ev.teams).forEach(k=>{ _removeFromKey(ev,n,k); });
+      const ri=(ev.teams.reserve||[]).indexOf(n); if(ri>=0) ev.teams.reserve.splice(ri,1);
+      if(ev.roles&&ev.roles[n]) delete ev.roles[n];
+    });
+    if(overflow.length) toast('小隊已滿，'+overflow.join('、')+' 已移回成員池','');
   } else {
+    // ── 拖到小隊空白區（非特定格子）：補到最後一個空位 ──
+    Object.keys(ev.teams).forEach(k=>{ if(k!==targetKey) _removeFromKey(ev,dragName,k); });
     _removeFromKey(ev,dragName,dragFrom);
-    const arr=ev.teams[targetKey];
-    let placed=false;
-    for(let i=0;i<SQUAD_SIZE;i++){ if(!arr[i]){ arr[i]=dragName; placed=true; break; } }
-    if(!placed&&arr.filter(Boolean).length<SQUAD_SIZE) arr.push(dragName);
+    const list=(ev.teams[targetKey]||[]).filter(Boolean);
+    if(list.length<SQUAD_SIZE){ list.push(dragName); ev.teams[targetKey]=list; }
+    else { toast('此小隊已滿','err'); }
   }
   S.setEvents(events);
   dragName=null; dragFrom=null;
