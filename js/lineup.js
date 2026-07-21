@@ -138,7 +138,7 @@ function buildLineup(ev,locked){
       for(let slot=0;slot<SQUAD_SIZE;slot++){
         const name=names[slot];
         if(name){
-          slots.push(playerCardHTML(name,members,ti,key,!locked,roles[name],signups[name]==='absent'));
+          slots.push(playerCardHTML(name,members,ti,key,!locked,roles[name],signups[name]==='absent',null,slot));
         } else {
           slots.push(locked
             ?`<div class="slot-empty"><span class="slot-empty-txt">空</span></div>`
@@ -152,7 +152,7 @@ function buildLineup(ev,locked){
           <button class="btn xs btn-purple" onclick="toggleSquadGuard('${key}')" title="標記為保鏢小隊" ${locked?'disabled':''}>🛡️</button>
           <button class="btn xs btn-outline" onclick="clearSquad('${key}')" ${locked?'disabled':''}>清空</button>
         </div>
-        <div class="squad-slots" ${locked?'':`ondragover="event.preventDefault()" ondrop="dropToSquad(event,'${key}')"`}>${slots.join('')}</div>
+        <div class="squad-slots" ${locked?'':`ondragover="event.preventDefault()"`}>${slots.join('')}</div>
       </div>`);
     }
     return `<div class="team-block">
@@ -231,7 +231,7 @@ function togglePlayerDetail(card,name){
 }
 
 // 隊伍中卡片
-function playerCardHTML(name,members,teamIdx,key,adminMode,role,isAbsent,evOverride){
+function playerCardHTML(name,members,teamIdx,key,adminMode,role,isAbsent,evOverride,slotIdx){
   const m=members.find(x=>x.name===name);
   const job=m?jobById(m.jobId):{name:'⚠️查無資料',color:'#e05252',id:''};
   const missingCls=m?'':' pcard-missing';
@@ -239,8 +239,9 @@ function playerCardHTML(name,members,teamIdx,key,adminMode,role,isAbsent,evOverr
   const roleCls=role==='cannon'?' role-cannon':role==='cmd'?' role-cmd':'';
   const absentCls=isAbsent?' pcard-absent':'';
   const roleLabel=role==='cannon'?'<div class="prole cannon">💣砲手</div>':role==='cmd'?'<div class="prole cmd">🎤指揮</div>':'';
+  const slotDropAttr=adminMode&&slotIdx!==null&&slotIdx!==undefined?` ondragover="event.preventDefault();this.classList.add('drag-over-slot')" ondragleave="this.classList.remove('drag-over-slot')" ondrop="dropToSlot(event,'${key}',${slotIdx})"`:'';
   return `<div class="pcard jbg-${job.id}${roleCls}${absentCls}${missingCls}"
-    ${adminMode?`draggable="true" ondragstart="startDrag(event,'${esc}','${key}')" ondragend="this.classList.remove('dragging')"`:''}
+    ${adminMode?`draggable="true" ondragstart="startDrag(event,'${esc}','${key}')" ondragend="this.classList.remove('dragging')"`:''}${slotDropAttr}
     title="${m?name:name+'（成員資料庫查無此人，請至「成員管理」→「🔧 從排表補齊成員」修復）'}">
     <div class="jdot" style="background:${job.color}">${job.img?`<img class="jimg" src="icons/jobs/${job.id}.png" alt="">`:(job.icon||job.name.charAt(0))}</div>
     <div class="pname">${name}</div>
@@ -359,6 +360,7 @@ function startDrag(e,name,fromKey){
 }
 function dropToSlot(e,targetKey,slotIdx){
   e.preventDefault();
+  e.stopPropagation();
   e.currentTarget.classList.remove('drag-over-slot');
   if(!dragName||!_curEventId) return;
   if(_guardLineupLock()){ dragName=null; return; }
@@ -366,16 +368,11 @@ function dropToSlot(e,targetKey,slotIdx){
 }
 function dropToSquad(e,targetKey){
   e.preventDefault();
-  if(!dragName||!_curEventId) return;
-  if(_guardLineupLock()){ dragName=null; return; }
-  const ev=S.events().find(x=>x.id===_curEventId); if(!ev) return;
-  ensureTeams(ev);
-  const arr=ev.teams[targetKey]||[];
-  if(arr.filter(Boolean).length>=SQUAD_SIZE){ toast('此小隊已滿','err'); dragName=null; return; }
-  _doMove(targetKey,null);
+  e.stopPropagation();
 }
 function dropToReserve(e){
   e.preventDefault();
+  e.stopPropagation();
   e.currentTarget.classList.remove('drag-over');
   if(!dragName||!_curEventId) return;
   if(_guardLineupLock()){ dragName=null; return; }
@@ -383,6 +380,7 @@ function dropToReserve(e){
 }
 function dropToPool(e){
   e.preventDefault();
+  e.stopPropagation();
   e.currentTarget.classList.remove('drag-over');
   if(!dragName||!_curEventId||dragFrom==='pool') return;
   if(_guardLineupLock()){ dragName=null; dragFrom=null; return; }
@@ -410,39 +408,35 @@ function _doMove(targetKey,slotIdx){
     S.setEvents(events); dragName=null; dragFrom=null; refreshLineup(); return;
   }
 
-  if(slotIdx!==null){
-    // ── 拖到某個「格子」：採「插入 + 其餘自動下移」，不再把原佔用者踢去候補 ──
-    // 先把目標小隊壓實成「無空洞」的名單（只留有人的格子，長度即實際人數）
-    const compact=(ev.teams[targetKey]||[]).filter(Boolean);
-    const sameSquad=(dragFrom===targetKey);
-    // 從來源移除被拖曳者（同隊移動時 compact 內也要移掉，才能重新插入到指定位置）
-    let list=compact.filter(n=>n!==dragName);
-    // 若不是同一小隊，先從原本所在的其他位置移除
-    if(!sameSquad){ Object.keys(ev.teams).forEach(k=>{ if(k!==targetKey) _removeFromKey(ev,dragName,k); }); }
-    // 插入點：不可超過目前實際人數（避免在空洞後面插出斷層）
-    const insertAt=Math.min(slotIdx, list.length);
-    list.splice(insertAt, 0, dragName);
-    // 溢出處理：小隊最多 SQUAD_SIZE 人，超出的最後一位自動移到候補
-    let overflow=[];
-    if(list.length>SQUAD_SIZE){ overflow=list.slice(SQUAD_SIZE); list=list.slice(0,SQUAD_SIZE); }
-    ev.teams[targetKey]=list;
-    // 溢出的成員移回「成員池」（左側原本的位置）：從所有隊伍與候補都移除，變回未分配狀態，
-    // 而不是塞進候補區；並清掉其特殊角色標記（砲手/指揮隨位置失效）
-    overflow.forEach(n=>{
-      if(!n) return;
-      Object.keys(ev.teams).forEach(k=>{ _removeFromKey(ev,n,k); });
-      const ri=(ev.teams.reserve||[]).indexOf(n); if(ri>=0) ev.teams.reserve.splice(ri,1);
-      if(ev.roles&&ev.roles[n]) delete ev.roles[n];
-    });
-    if(overflow.length) toast('小隊已滿，'+overflow.join('、')+' 已移回成員池','');
-  } else {
-    // ── 拖到小隊空白區（非特定格子）：補到最後一個空位 ──
+  const sameSquad=(dragFrom===targetKey);
+  const compactTarget=(ev.teams[targetKey]||[]).filter(Boolean);
+  let list=sameSquad?compactTarget.filter(n=>n!==dragName):compactTarget.slice();
+
+  if(!sameSquad){
+    // 不是同一小隊：先把被拖曳者從原本位置移除（包含候補/其他隊伍）
     Object.keys(ev.teams).forEach(k=>{ if(k!==targetKey) _removeFromKey(ev,dragName,k); });
-    _removeFromKey(ev,dragName,dragFrom);
-    const list=(ev.teams[targetKey]||[]).filter(Boolean);
-    if(list.length<SQUAD_SIZE){ list.push(dragName); ev.teams[targetKey]=list; }
-    else { toast('此小隊已滿','err'); }
   }
+
+  if(slotIdx!==null){
+    // 精準落點插入；目標位置才是最終排序位置
+    const insertAt=Math.max(0,Math.min(slotIdx, list.length));
+    list.splice(insertAt, 0, dragName);
+
+    if(!sameSquad && list.length>SQUAD_SIZE){
+      const overflow=list.slice(SQUAD_SIZE);
+      list=list.slice(0,SQUAD_SIZE);
+      overflow.forEach(n=>{
+        if(!n) return;
+        Object.keys(ev.teams).forEach(k=>{ _removeFromKey(ev,n,k); });
+        const ri=(ev.teams.reserve||[]).indexOf(n); if(ri>=0) ev.teams.reserve.splice(ri,1);
+        if(ev.roles&&ev.roles[n]) delete ev.roles[n];
+      });
+      toast('小隊已滿，'+overflow.join('、')+' 已移回成員池','');
+    }
+
+    ev.teams[targetKey]=Array.from({length:SQUAD_SIZE},(_,i)=>list[i]||null);
+  }
+
   S.setEvents(events);
   dragName=null; dragFrom=null;
   refreshLineup();

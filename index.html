@@ -2,6 +2,9 @@
 <html lang="zh-TW">
 <head>
 <meta charset="UTF-8">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,viewport-fit=cover">
 <meta name="description" content="逆水寒俱樂部／幫戰排表、成員、比賽紀錄與數據分析管理系統">
 <meta name="theme-color" content="#0d1117">
@@ -222,8 +225,8 @@
         <label>角色身份</label>
         <select id="role-select" class="fsel">
           <option value="">一般成員（無特殊角色）</option>
-          <option value="cannon">🧨 砲手</option>
-          <option value="cmd">⭐ 指揮</option>
+          <option value="cannon">💣 砲手</option>
+          <option value="cmd">🎤 指揮</option>
         </select>
       </div>
       <p class="hint mt8">砲手與指揮須先分配到隊伍中才能指定，每隊可有多名砲手，指揮通常為單一玩家。</p>
@@ -382,10 +385,16 @@
 </script>
 
 <script>
+  // 用「部署版號」來讓 service worker 每次更新時都抓到新 URL，
+  // 不需要你每次手動把 sw.js 的快取名稱加一。
+  const APP_BUILD_ID = 'build-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8);
+
   // Register service worker for offline / installable PWA support
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
-      navigator.serviceWorker.register('sw.js').then(reg => {
+      navigator.serviceWorker.register('sw.js?v=' + APP_BUILD_ID, {
+        updateViaCache: 'none'
+      }).then(reg => {
         // 每次進入頁面（含掃QR碼、輸入網址、從主畫面開啟APP）都主動檢查有沒有新版本
         reg.update().catch(()=>{});
         // 從背景切回APP時也檢查一次（PWA常駐背景的情況）
