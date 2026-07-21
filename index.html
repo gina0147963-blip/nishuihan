@@ -385,14 +385,11 @@
 </script>
 
 <script>
-  // 用「部署版號」來讓 service worker 每次更新時都抓到新 URL，
-  // 不需要你每次手動把 sw.js 的快取名稱加一。
-  const APP_BUILD_ID = 'build-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8);
-
-  // Register service worker for offline / installable PWA support
+  // 讓 service worker 只在背景執行更新檢查，
+  // 不再在你正在操作頁面時強制重新整理，避免中斷工作流程。
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
-      navigator.serviceWorker.register('sw.js?v=' + APP_BUILD_ID, {
+      navigator.serviceWorker.register('sw.js', {
         updateViaCache: 'none'
       }).then(reg => {
         // 每次進入頁面（含掃QR碼、輸入網址、從主畫面開啟APP）都主動檢查有沒有新版本
@@ -402,17 +399,6 @@
           if (document.visibilityState === 'visible') reg.update().catch(()=>{});
         });
       }).catch(err => console.warn('SW registration failed:', err));
-
-      // 新版本的程式接管時，自動重新整理一次頁面，
-      // 確保每個人一定是用最新版操作，不用手動重整好幾遍。
-      // 「首次安裝」與「已重整過」的情況不會觸發，避免無限重整迴圈。
-      const hadController = !!navigator.serviceWorker.controller;
-      let _swReloaded = false;
-      navigator.serviceWorker.addEventListener('controllerchange', () => {
-        if (!hadController || _swReloaded) return;
-        _swReloaded = true;
-        location.reload();
-      });
     });
   }
 
