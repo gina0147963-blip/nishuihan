@@ -201,7 +201,7 @@ function openMyHistory(){
         if(m2) teamLabel=(ev.teamNames[+m2[1]]||'?')+'-'+(+m2[2]+1)+'隊';
       }
       const role=(ev.roles||{})[CUR_USER];
-      myLineups.push({name:ev.name,date:ev.date||'',team:teamLabel,role:role==='cannon'?'🧨砲手':role==='cmd'?'⭐指揮':''});
+      myLineups.push({name:ev.name,date:ev.date||'',team:teamLabel,role:role==='cannon'?'💣砲手':role==='cmd'?'🎤指揮':''});
     });
   });
 
