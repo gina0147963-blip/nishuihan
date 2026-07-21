@@ -238,7 +238,7 @@ function playerCardHTML(name,members,teamIdx,key,adminMode,role,isAbsent,evOverr
   const esc=name.replace(/'/g,"\\'");
   const roleCls=role==='cannon'?' role-cannon':role==='cmd'?' role-cmd':'';
   const absentCls=isAbsent?' pcard-absent':'';
-  const roleLabel=role==='cannon'?'<div class="prole cannon">🧨砲手</div>':role==='cmd'?'<div class="prole cmd">⭐指揮</div>':'';
+  const roleLabel=role==='cannon'?'<div class="prole cannon">💣砲手</div>':role==='cmd'?'<div class="prole cmd">🎤指揮</div>':'';
   return `<div class="pcard jbg-${job.id}${roleCls}${absentCls}${missingCls}"
     ${adminMode?`draggable="true" ondragstart="startDrag(event,'${esc}','${key}')" ondragend="this.classList.remove('dragging')"`:''}
     title="${m?name:name+'（成員資料庫查無此人，請至「成員管理」→「🔧 從排表補齊成員」修復）'}">
@@ -633,7 +633,7 @@ function exportLineupImage(){
           ctx.fillStyle=job.color;
           ctx.fillRect(x,y+2,COLW-4,rowH-4);
           ctx.fillStyle='#fff';
-          const label=name+(roles[name]==='cannon'?' 🧨':roles[name]==='cmd'?' ⭐':'');
+          const label=name+(roles[name]==='cannon'?' 💣':roles[name]==='cmd'?' 🎤':'');
           ctx.fillText(_fitText(ctx,label,COLW-16,20,14,true), x+8, y+26);
           ctx.font='14px sans-serif';
           ctx.fillText(job.name, x+8, y+46);
