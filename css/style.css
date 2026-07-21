@@ -52,7 +52,10 @@ input,select,textarea{font-family:inherit;font-size:inherit}
 .login-input-group{width:100%;position:relative}
 .login-input{width:100%;padding:10px 14px;background:var(--bg3);border:1px solid var(--border);border-radius:var(--r2);color:var(--txt);outline:none;transition:border-color .2s}
 .login-input:focus{border-color:var(--accent)}
-.login-suggest{position:absolute;top:100%;left:0;right:0;z-index:10;background:var(--bg3);border:1px solid var(--border);border-radius:var(--r2);margin-top:2px;max-height:160px;overflow-y:auto}
+.login-suggest{position:absolute;top:100%;left:0;right:0;z-index:100;background:var(--bg3);border:1px solid var(--border);border-radius:var(--r2);margin-top:2px;max-height:200px;overflow-y:auto;box-shadow:0 8px 24px rgba(0,0,0,.5)}
+/* 有搜尋建議時，玩家卡片整體浮到管理員卡片之上，避免下方卡片壓住清單 */
+.login-card.player{position:relative;z-index:5}
+.login-card.player:focus-within{z-index:60}
 .suggest-item{padding:9px 14px;cursor:pointer;display:flex;align-items:center;gap:8px;font-size:13px}
 .suggest-item:hover{background:var(--bg4)}
 .btn-login-player{width:100%;padding:11px;background:var(--accent);color:#fff;border-radius:var(--r2);font-weight:700;font-size:14px}
@@ -262,6 +265,11 @@ tr:hover td{background:var(--bg4)}
   .frow{grid-template-columns:1fr}
   .stats-grid{grid-template-columns:1fr}
   .signup-opts{flex-direction:column}
+  /* 手機直向堆疊時，backdrop-filter 會讓下方管理員卡片蓋住浮動的搜尋清單。
+     改為「非浮動、撐開版面」：建議清單佔據實際高度並把下方卡片往下推，
+     這樣清單完整可見、可捲動，不會被壓到最底。 */
+  .login-input-group{position:static}
+  .login-suggest{position:static;max-height:44vh;margin-top:6px}
 }
 /* ===== SQUAD GRID (5小隊 × 6格) ===== */
 .squads-grid{display:flex;flex-direction:column;gap:8px;padding:10px}
