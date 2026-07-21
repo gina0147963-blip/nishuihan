@@ -197,6 +197,13 @@ let _editMemberId=null;
 let _msActState='';
 // 絕技欄的篩選狀態（點表頭切換）：只看尚未設定任何絕技的成員
 let _msSkillState=false;
+// 總積分欄排序狀態（點表頭切換）：'' 預設 → 'high' 高→低 → 'low' 低→高 → 回 ''
+let _msScoreSort='';
+function cycleScoreSort(){
+  const seq=['','high','low'];
+  _msScoreSort=seq[(seq.indexOf(_msScoreSort)+1)%seq.length];
+  renderAdminMembers(document.getElementById('pane-a-members'));
+}
 
 function cycleActSort(){
   const seq=['','low','high','never'];
@@ -235,6 +242,11 @@ function _memberView(){
     filtered=filtered.slice().sort((a,b)=>(actMap[a.id].a-actMap[b.id].a)||(actMap[a.id].resp-actMap[b.id].resp));
   } else if(qa==='high'){
     filtered=filtered.slice().sort((a,b)=>(actMap[b.id].a-actMap[a.id].a)||(actMap[b.id].resp-actMap[a.id].resp));
+  }
+  // 總積分排序（僅積分機制組織；與出席排序互斥，積分排序啟用時以它為準）
+  if(_msScoreSort && typeof scoreEnabled==='function' && scoreEnabled() && typeof memberScoreTotal==='function'){
+    const sc={}; filtered.forEach(m=>{ sc[m.id]=memberScoreTotal(m.name); });
+    filtered=filtered.slice().sort((a,b)=> _msScoreSort==='high' ? (sc[b.id]-sc[a.id]) : (sc[a.id]-sc[b.id]));
   }
   return {members, filtered, actMap, qs, qc, qa};
 }
@@ -287,7 +299,7 @@ function renderAdminMembers(pane){
   <div class="tbl-wrap"><table>
     <thead><tr><th style="width:36px"></th><th>成員名稱</th><th>職業</th>
       <th style="cursor:pointer;white-space:nowrap;user-select:none" onclick="cycleActSort()" title="點擊切換：預設 → 出席少→多 → 出席多→少 → 只看從未出賽/報名">出席場數 ${({'':'⇅','low':'🔼','high':'🔽','never':'💤'})[v.qa]}</th>
-      ${(typeof scoreEnabled==='function'&&scoreEnabled())?'<th title="依報名/出賽/影片自動計分＋手動加分，點成員的數字可看明細">🏅 總積分</th>':''}
+      ${(typeof scoreEnabled==='function'&&scoreEnabled())?`<th style="cursor:pointer;white-space:nowrap;user-select:none" onclick="cycleScoreSort()" title="點擊切換：預設 → 積分高→低 → 積分低→高">🏅 總積分 ${({'':'⇅','high':'🔽','low':'🔼'})[_msScoreSort]}</th>`:''}
       <th style="cursor:pointer;white-space:nowrap;user-select:none" onclick="toggleSkillFilter()" title="點擊切換：只顯示尚未設定絕技的成員">絕技 ${_msSkillState?'❓':'⇅'}</th>
       <th>群俠技能</th>
       <th>操作</th></tr></thead>
@@ -330,7 +342,9 @@ function openEditMember(id){
 }
 function memberClassChange(){ /* skill list is global, no per-job filtering anymore */ }
 async function saveMember(){
-  const name=document.getElementById('m-name').value.trim();
+  // 清除從遊戲/聊天視窗複製貼上時常夾帶的零寬空白等隱形字元，
+  // 避免產生「看起來一樣、其實不同」的名稱造成重複或搜尋不到
+  const name=document.getElementById('m-name').value.trim().replace(/[\u200B-\u200F\uFEFF\u2060]/g,'');
   const jobId=document.getElementById('m-class').value;
   const status=document.getElementById('m-status').value;
   if(!name){toast('請輸入角色名稱','err');return;}
@@ -359,6 +373,14 @@ async function saveMember(){
     toast('成員已更新','ok');
   } else {
     if(members.find(m=>m.name===name)){toast('角色名稱已存在','err');return;}
+    // ★ 曾用名衝突檢查：若這個名稱在某位成員的「曾用名」清單裡，
+    // 系統的改名合併機制會在儲存後立刻把新成員自動併回該成員（看起來像「加不進去」）。
+    // 這裡先擋下並明確告知處理方式，不再無聲消失。
+    const aliasOwner=members.find(m=>m.name!==name&&(m.aliases||[]).includes(name));
+    if(aliasOwner){
+      toast('⚠️ 「'+name+'」是成員「'+aliasOwner.name+'」改名前的曾用名，系統會視為同一人。若這確實是不同的新玩家，請改用可區別的角色名稱新增（例如加上後綴），以免與歷史紀錄混淆。','err');
+      return;
+    }
     members.push({id:uid(),name,jobId,status,note:'',skills,baijia,createdAt:Date.now(),updatedAt:Date.now()});
     toast('成員已新增','ok');
   }
