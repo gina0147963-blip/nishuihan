@@ -29,9 +29,9 @@ const SHARED_SPREADSHEET_ID = '1MNFrYwfjdsNGCNhUL14-pFIO5pQBRnGay6SmAq5W_F0';
 //                  產生方式：https://emn178.github.io/online-tools/sha256.html 輸入密碼後複製結果
 const ORGS = [
   { id:'bycx',    name:'白月燦星', mode:'guild', spreadsheetId:SHARED_SPREADSHEET_ID, prefix:'幫戰_',
-    pwSha256:'615ed7fb1504b0c724a296d7a69e6c7b2f9ea2c57c1d8206c5afdf392ebdfd25' },
+    pwSha256:'556d7dc3a115356350f1f9910b1af1ab0e312d4b3e4fc788d2da63668f36d017' },
   { id:'jinzhao', name:'今朝',     mode:'club',  spreadsheetId:SHARED_SPREADSHEET_ID, prefix:'俱樂部_',
-    pwSha256:'8c1cdb9cb4dbac6dbb6ebd118ec8f9523d22e4e4cb8cc9df5f7e1e499bba3c10' },
+    pwSha256:'556d7dc3a115356350f1f9910b1af1ab0e312d4b3e4fc788d2da63668f36d017' },
   { id:'byfx',    name:'白月梵星', mode:'guild', spreadsheetId:'1MZo6OXOnz7R5lVbMcMnJ9jAaW1eMS81_khWKlvtXyBc', prefix:'白月梵星_',
     pwSha256:'94edf28c6d6da38fd35d7ad53e485307f89fbeaf120485c8d17a43f323deee71' },
   { id:'jj',      name:'劍姬',     mode:'club',  spreadsheetId:'1WEMwFS-ODIe1GYZisbRG8KHKf1pdHcutKzbsoTN38To', prefix:'劍姬_',
@@ -549,7 +549,7 @@ function logSync(ss, org, ts) {
 //   5. 之後不管重新部署幾次網頁版（部署→新版本），這個每日排程都不受影響，
 //      會持續運作，只要函式名稱 dailyBackupCheck 保持不變即可
 // ============================================================
-const BACKUP_INTERVAL_DAYS = 2;
+const BACKUP_INTERVAL_HOURS = 8;
 const BACKUP_SLOT_COUNT = 3;
 const BACKUP_FOLDER_NAME = '逆水寒系統_自動備份';
 
@@ -577,8 +577,8 @@ function dailyBackupCheck() {
     try {
       var lastStr = props.getProperty('backup_last_' + ssId);
       if (lastStr) {
-        var elapsedDays = (now - new Date(lastStr)) / (24 * 60 * 60 * 1000);
-        if (elapsedDays < BACKUP_INTERVAL_DAYS) return; // 還沒到2天，這份先跳過
+        var elapsedHours = (now - new Date(lastStr)) / (60 * 60 * 1000);
+        if (elapsedHours < BACKUP_INTERVAL_HOURS) return; // 還沒到8小時，這份先跳過
       }
       var slot = parseInt(props.getProperty('backup_slot_' + ssId) || '0', 10);
       var ss = SpreadsheetApp.openById(ssId);
@@ -606,8 +606,7 @@ function installBackupTrigger() {
   });
   ScriptApp.newTrigger('dailyBackupCheck')
     .timeBased()
-    .everyDays(1)
-    .atHour(3) // 每天凌晨3點檢查（依專案時區設定）
+    .everyHours(8)
     .create();
   console.log('✅ 每日備份排程已安裝，之後會自動每天檢查並視需要備份。');
 }
