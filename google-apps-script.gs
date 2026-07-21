@@ -638,6 +638,8 @@ function uninstallBackupTrigger() {
 // ============================================================
 var RESTORE_BACKUP_NAME   = '';    // ← 貼入 listBackups 列出的備份檔名稱
 var RESTORE_REVIVE_DELETED = false; // true = 連「刪除紀錄」內的資料也一併復活
+var RESTORE_TARGET_ID = '';        // 只有在「舊備份缺少來源ID標記」且分頁前綴也判斷不出唯一結果時才需要填：
+                                    // 貼入目標試算表網址中 /d/ 和 /edit 之間那串ID
 
 function listBackups() {
   var folder = _getOrCreateBackupFolder();
@@ -659,11 +661,39 @@ function restoreFromBackup() {
   if (!it.hasNext()) throw new Error('找不到備份檔「' + RESTORE_BACKUP_NAME + '」，請先執行 listBackups 確認名稱');
   var bakFile = it.next();
 
-  // 從備份檔描述取出來源試算表ID，自動對應要還原到哪一份主試算表
+  // 決定這份備份要還原回哪一份主試算表，依序嘗試兩種方式：
+  var targetId = null;
   var desc = bakFile.getDescription() || '';
   var m = desc.match(/來源ID:([A-Za-z0-9_\-]+)/);
-  if (!m) throw new Error('這份備份缺少來源ID標記（較舊的備份檔）。請等新備份產生後再用，或手動開啟備份複本比對救回');
-  var targetId = m[1];
+  if (m) {
+    // 方式一（較新備份才有）：描述欄位直接記錄來源試算表ID，最快最準
+    targetId = m[1];
+  } else {
+    // 方式二（較舊備份的備援）：備份檔本身是原試算表的完整複本，分頁名稱會保留
+    // 原本的組織前綴（例如「幫戰_」「俱樂部_」）。用這個前綴回頭比對 ORGS 清單，
+    // 一樣能準確判斷出要還原回哪一份試算表，不必等新備份產生才能用。
+    var bakForScan = SpreadsheetApp.openById(bakFile.getId());
+    var sheetNames = bakForScan.getSheets().map(function(sh){ return sh.getName(); });
+    var matchedIds = {};
+    var matchedOrgNames = [];
+    ORGS.forEach(function(o){
+      var hit = sheetNames.some(function(n){ return o.prefix && n.indexOf(o.prefix) === 0; });
+      if (hit) { matchedIds[o.spreadsheetId] = true; matchedOrgNames.push(o.name); }
+    });
+    var idKeys = Object.keys(matchedIds);
+    if (idKeys.length === 1) {
+      targetId = idKeys[0];
+      console.log('（舊版備份，未含來源ID標記）已依分頁前綴自動判斷：此備份屬於「' + matchedOrgNames.join('、') + '」，還原目標試算表ID：' + targetId);
+    } else if (RESTORE_TARGET_ID) {
+      // 前綴判斷不出唯一結果（例如分頁被大量刪改）時，允許手動指定目標試算表ID
+      targetId = RESTORE_TARGET_ID;
+      console.log('已使用手動指定的 RESTORE_TARGET_ID 作為還原目標：' + targetId);
+    } else {
+      throw new Error('這份備份缺少來源ID標記，且無法從分頁名稱唯一判斷所屬試算表（比對到：' +
+        (matchedOrgNames.join('、') || '無') + '）。請在程式碼上方把 RESTORE_TARGET_ID 設為目標試算表的ID後再執行，' +
+        '或改用等新備份產生後再還原。');
+    }
+  }
 
   var bak = SpreadsheetApp.openById(bakFile.getId());
   var main = SpreadsheetApp.openById(targetId);
