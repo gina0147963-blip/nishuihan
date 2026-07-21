@@ -52,7 +52,12 @@ function _mergeById(localArr, cloudArr, tombIds, stats){
     if(!item||!item.id) return;
     const cloudItem = map.get(item.id);
     if(!cloudItem){ map.set(item.id, item); return; } // 本機獨有（例如剛新增，雲端還沒同步到）
-    // 兩邊都有同一筆：有時間戳記的話新的優先，否則保留本機版本
+    // 兩邊都有同一筆 id：
+    // ★ 改名保護——先比「改名/異動歷史(changeLog)」誰比較完整，較多異動的版本代表較新的真實狀態，
+    //   優先勝出，避免某台裝置的舊快取（changeLog 較短、名字還是舊的）用較大的 updatedAt 把改名結果打回去。
+    const lcl=(item.changeLog||[]).length, ccl=(cloudItem.changeLog||[]).length;
+    if(lcl!==ccl){ map.set(item.id, lcl>ccl ? item : cloudItem); return; }
+    // 異動歷史一樣多，才回到用時間戳記比新舊
     const lu=item.updatedAt||0, cu=cloudItem.updatedAt||0;
     if(cu>lu && stats) stats.cloudWins=(stats.cloudWins||0)+1;
     map.set(item.id, cu>lu ? cloudItem : item);
@@ -189,7 +194,7 @@ async function syncLoad(silent) {
 
     // 快照套用前的本機資料：套用後比對，若完全沒變就不重繪畫面，
     // 避免使用者停留在數據分析等頁面時，每60秒被無意義地整頁重置跳掉
-    const _beforeSnap = JSON.stringify([S.members(),S.events(),S.matches(),S.signups()]);
+    const _beforeSnap = JSON.stringify([S.members(),S.events(),S.matches(),S.signups(),S.g(S.k('score_log'),[]),S.g(S.k('score_cfg'),null)]);
 
     // 暫停寫入攔截，避免讀取觸發再寫入無限循環
     _suppressWrite = true;
@@ -262,7 +267,7 @@ async function syncLoad(silent) {
     }catch(_){}
 
     // 只有資料真的有變動才重繪畫面（沒變就完全不動，使用者的瀏覽狀態不受打擾）
-    const _afterSnap = JSON.stringify([S.members(),S.events(),S.matches(),S.signups()]);
+    const _afterSnap = JSON.stringify([S.members(),S.events(),S.matches(),S.signups(),S.g(S.k('score_log'),[]),S.g(S.k('score_cfg'),null)]);
     const _dataChanged = _beforeSnap !== _afterSnap;
     if (!silent) {
       toast('✅ 已載入最新資料', 'ok');
@@ -559,10 +564,14 @@ function _dedupeMembersByName(arr){
     if(main.status!=='固定團'&&other.status==='固定團') main.status='固定團';
     byName.set(m.name, main);
   });
-  // ── 第二階段：曾用名吸收 ──
-  // 玩家改名後，「舊名字」的成員紀錄可能仍存在（例如改名前由比賽紀錄自動補進、或其他裝置的舊快取）。
-  // 只要某成員 A 的曾用名清單裡有 B 的名字，代表 B 就是 A 改名前的自己 → 把 B 整筆併入 A 後移除，
-  // 徹底解決「改名後出現新舊兩個名字、人數變多」的問題。
+  // ── 第二階段：曾用名吸收（id 感知，改名安全版）──
+  // 目的：清掉「改名前殘留的舊名字幽靈紀錄」（例如改名前由比賽紀錄自動補進的空殼、或其他裝置舊快取），
+  // 讓改名後不會同時出現新舊兩個名字、人數灌水。
+  // ★ 安全規則（修正「改名後整筆消失」）：
+  //   1. 只有當「舊名字紀錄」與「本人(改名後)紀錄」是不同的 id 時才吸收；
+  //      同一筆 id 只是改了名字，不是重複，絕不刪除。
+  //   2. 只吸收「幽靈殼」——沒有職業、沒有技能、沒有自己的改名歷史的舊名字紀錄；
+  //      若舊名字那筆本身有實質資料（代表可能是不同的人），一律保留，不吸收，避免誤刪。
   const aliasOwner=new Map(); // 舊名字 → 本人(改名後)的名字
   byName.forEach(m=>{ (m.aliases||[]).forEach(a=>{
     if(a===m.name) return;
@@ -574,8 +583,14 @@ function _dedupeMembersByName(arr){
     const oldRec=byName.get(oldName);
     const owner=byName.get(ownerName);
     if(!oldRec||!owner||oldName===ownerName) return;
-    owner.skills=[...new Set([...(owner.skills||[]),...(oldRec.skills||[])])];
-    owner.baijia=[...new Set([...(owner.baijia||[]),...(oldRec.baijia||[])])];
+    if(oldRec.id && owner.id && oldRec.id===owner.id) return; // 同一筆 id，只是改名，不吸收
+    // 舊名字紀錄若有實質資料（有職業/技能/自己的改名史）→ 視為獨立成員，保留不吸收
+    const oldHasData = (oldRec.jobId && oldRec.jobId!=='unknown')
+      || (oldRec.skills&&oldRec.skills.length)
+      || (oldRec.baijia&&oldRec.baijia.length)
+      || (oldRec.changeLog&&oldRec.changeLog.length);
+    if(oldHasData) return;
+    // 確定是幽靈殼 → 把它的曾用名併入本人後移除
     owner.aliases=[...new Set([...(owner.aliases||[]),...(oldRec.aliases||[]),oldName])].filter(a=>a!==owner.name);
     if(!owner.note&&oldRec.note) owner.note=oldRec.note;
     if(owner.status!=='固定團'&&oldRec.status==='固定團') owner.status='固定團';
