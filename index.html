@@ -389,7 +389,7 @@
   // 不再在你正在操作頁面時強制重新整理，避免中斷工作流程。
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
-      navigator.serviceWorker.register('sw.js', {
+      navigator.serviceWorker.register('sw.js?v=20260722', {
         updateViaCache: 'none'
       }).then(reg => {
         // 每次進入頁面（含掃QR碼、輸入網址、從主畫面開啟APP）都主動檢查有沒有新版本
