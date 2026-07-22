@@ -401,10 +401,13 @@ async function saveMember(){
       if(typeof autoSignupFixedMembers==='function') autoSignupFixedMembers(savedM.name);
     }
   }catch(_){}
-      // 改名後立即清理：吸收殘留的舊名字成員紀錄、把舊名字的報名搬到新名字名下
+      // 改名後立即清理：吸收殘留的舊名字成員紀錄、把舊名字的報名搬到新名字名下、
+      // 並把排表系統（隊伍名單/砲手指揮/指派技能）裡的舊名字也搬到新名字名下，
+      // 這樣該玩家後續的出席率等統計才會正確，排表也不會出現查無資料的舊名字卡片
       try{
         if(typeof _dedupeMembersByName==='function') S.setMembers(_dedupeMembersByName(S.members()));
         if(typeof _migrateAliasSignups==='function') _migrateAliasSignups();
+        if(typeof _migrateAliasLineups==='function') _migrateAliasLineups();
       }catch(_){}
   closeModal('modal-member');
   renderAdminMembers(document.getElementById('pane-a-members'));
