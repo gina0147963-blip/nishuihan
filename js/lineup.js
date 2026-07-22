@@ -393,6 +393,11 @@ function dropToPool(e){
   dragName=null; dragFrom=null;
   refreshLineup();
 }
+function _normalizeTeamSlots(list,size){
+  const out=(Array.isArray(list)?list:[]).slice(0,size);
+  while(out.length<size) out.push(null);
+  return out;
+}
 function _doMove(targetKey,slotIdx){
   if(!_curEventId) return;
   const events=S.events();
@@ -409,32 +414,52 @@ function _doMove(targetKey,slotIdx){
   }
 
   const sameSquad=(dragFrom===targetKey);
-  const compactTarget=(ev.teams[targetKey]||[]).filter(Boolean);
-  let list=sameSquad?compactTarget.filter(n=>n!==dragName):compactTarget.slice();
+  const targetPos=Math.max(0,Math.min(slotIdx!==null?slotIdx:0,SQUAD_SIZE-1));
+  const targetList=(ev.teams[targetKey]||[]).slice();
+  const occupied=targetList[targetPos]||null;
+  const sourcePos=(dragFrom && dragFrom!=='pool' && dragFrom!=='reserve') ? (ev.teams[dragFrom]||[]).indexOf(dragName) : -1;
 
-  if(!sameSquad){
-    // 不是同一小隊：先把被拖曳者從原本位置移除（包含候補/其他隊伍）
-    Object.keys(ev.teams).forEach(k=>{ if(k!==targetKey) _removeFromKey(ev,dragName,k); });
+  if(dragFrom !== 'pool' && dragFrom !== 'reserve'){
+    // 先把拖曳者從原本隊伍移除，保持其他位置不動
+    _removeFromKey(ev,dragName,dragFrom);
   }
+  Object.keys(ev.teams).forEach(k=>{
+    if(k===targetKey) return;
+    if(k===dragFrom) return;
+    _removeFromKey(ev,dragName,k);
+  });
 
-  if(slotIdx!==null){
-    // 精準落點插入；目標位置才是最終排序位置
-    const insertAt=Math.max(0,Math.min(slotIdx, list.length));
-    list.splice(insertAt, 0, dragName);
-
-    if(!sameSquad && list.length>SQUAD_SIZE){
-      const overflow=list.slice(SQUAD_SIZE);
-      list=list.slice(0,SQUAD_SIZE);
-      overflow.forEach(n=>{
-        if(!n) return;
-        Object.keys(ev.teams).forEach(k=>{ _removeFromKey(ev,n,k); });
-        const ri=(ev.teams.reserve||[]).indexOf(n); if(ri>=0) ev.teams.reserve.splice(ri,1);
-        if(ev.roles&&ev.roles[n]) delete ev.roles[n];
-      });
-      toast('小隊已滿，'+overflow.join('、')+' 已移回成員池','');
+  if(sameSquad){
+    // 同一小隊內拖曳：只將拖曳者與指定位置的成員做交換
+    const sourcePosInTarget=(ev.teams[targetKey]||[]).indexOf(dragName);
+    const nextTarget=(ev.teams[targetKey]||[]).slice();
+    if(sourcePosInTarget>=0 && occupied){
+      nextTarget[sourcePosInTarget]=occupied;
+      nextTarget[targetPos]=dragName;
+      ev.teams[targetKey]=_normalizeTeamSlots(nextTarget,SQUAD_SIZE);
+    } else {
+      nextTarget[targetPos]=dragName;
+      ev.teams[targetKey]=_normalizeTeamSlots(nextTarget,SQUAD_SIZE);
     }
-
-    ev.teams[targetKey]=Array.from({length:SQUAD_SIZE},(_,i)=>list[i]||null);
+  } else {
+    // 來自成員池／候補／其他隊伍：只在目標槽位做交換，其他原先位置不動
+    const nextTarget=(ev.teams[targetKey]||[]).slice();
+    if(occupied){
+      if(dragFrom==='pool'){
+        // 成員池拖進來：被指定槽位的成員回到成員池（自然消失於團隊清單）
+        nextTarget[targetPos]=dragName;
+      } else if(sourcePos>=0){
+        const sourceList=(ev.teams[dragFrom]||[]).slice();
+        sourceList[sourcePos]=occupied;
+        ev.teams[dragFrom]=_normalizeTeamSlots(sourceList,Math.max(sourceList.length,SQUAD_SIZE));
+        nextTarget[targetPos]=dragName;
+      } else {
+        nextTarget[targetPos]=dragName;
+      }
+    } else {
+      nextTarget[targetPos]=dragName;
+    }
+    ev.teams[targetKey]=_normalizeTeamSlots(nextTarget,SQUAD_SIZE);
   }
 
   S.setEvents(events);
