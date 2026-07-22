@@ -245,6 +245,10 @@ async function syncLoad(silent) {
       }
       // 改名遷移：把舊名字的報名搬到新名字名下（有變動會在後續資料快照比對中觸發畫面更新與回寫）
       if (_migrateAliasSignups()) needPushBack = true;
+      // 改名遷移：把舊名字在排表系統（隊伍/候補/砲手指揮/指派技能）裡的紀錄也搬到新名字名下。
+      // 放在每次同步都會執行的這裡（而不是只在剛改名當下），
+      // 才能連「這次更新部署之前就已經改過名字」的舊資料也一併修正，不必逐一重新編輯成員才能觸發。
+      if (_migrateAliasLineups()) needPushBack = true;
     } finally {
       _suppressWrite = false;
     }
