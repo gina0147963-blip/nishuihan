@@ -499,6 +499,7 @@ async function saveSelfEdit(){
     try{
       if(typeof _dedupeMembersByName==='function') S.setMembers(_dedupeMembersByName(S.members())); // 吸收舊名字的殘留紀錄
       if(typeof _migrateAliasSignups==='function') _migrateAliasSignups(); // 報名紀錄搬到新名字名下
+      if(typeof _migrateAliasLineups==='function') _migrateAliasLineups(); // 排表（隊伍名單/砲手指揮/指派技能）也搬到新名字名下
     }catch(_){}
   }
   // 改名後同步更新目前登入身分與工作階段，避免下次重整又變回舊名
