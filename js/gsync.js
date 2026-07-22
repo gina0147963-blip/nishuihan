@@ -626,6 +626,84 @@ function _migrateAliasSignups(){
   if(changed) _writeSignups(out);
   return changed;
 }
+
+// 排表紀錄跟著改名遷移：把「舊名字」在所有場次排表中的隊伍名單（含候補）、
+// 砲手／指揮標記、指派技能／群俠技能，全部搬到「新名字」名下。
+// 若不遷移，改名後排表卡片會因為「成員資料庫查無此人」顯示查無資料警告，
+// 且該玩家會同時以新舊兩個名字出現（舊名卡在原本的隊伍格子、新名又出現在成員池待排入），
+// 造成排表人數看起來變多、也可能被誤拖曳成同一人排進兩個位置，
+// 讓出席率、排入排表次數等統計看起來不正確（雖然統計本身已用曾用名比對，但畫面與人數會混亂）。
+function _migrateAliasLineups(){
+  const members=S.members();
+  const aliasOwner=new Map(); // 舊名字 → 本人(改名後)的名字
+  members.forEach(m=>{ (m.aliases||[]).forEach(a=>{ if(a!==m.name) aliasOwner.set(a, m.name); }); });
+  if(!aliasOwner.size) return false;
+  const events=S.events();
+  let changed=false;
+  const toArr=v=>Array.isArray(v)?v:(v?[v]:[]); // 相容舊版單一字串資料
+
+  events.forEach(ev=>{
+    // 隊伍名單（含候補）：陣列裡的舊名字換成新名字。
+    // 小隊（t{團}_sq{隊}）是固定6格、位置＝實際格子，只能原地替換，
+    // 不能因為改名前後重複而讓陣列變短，否則後面的人會被往前擠、跑到別的格子；
+    // 若同一人（改名前後）恰好重複出現在同一小隊，多出來的格子淨空即可。
+    // 候補是不限名額的名單（顯示時本來就會濾掉空值），去重後直接壓縮即可。
+    if(ev.teams){
+      Object.keys(ev.teams).forEach(key=>{
+        const arr=ev.teams[key];
+        if(!Array.isArray(arr)) return;
+        let localChanged=false;
+        if(key==='reserve'){
+          const seen=new Set(); const out=[];
+          arr.forEach(n=>{
+            if(!n) return;
+            const owner=aliasOwner.get(n)||n;
+            if(owner!==n) localChanged=true;
+            if(!seen.has(owner)){ seen.add(owner); out.push(owner); }
+            else localChanged=true;
+          });
+          if(localChanged){ ev.teams[key]=out; changed=true; }
+        } else {
+          const seen=new Set();
+          const out=arr.map(n=>{
+            if(!n) return n;
+            const owner=aliasOwner.get(n);
+            const final=owner||n;
+            if(owner) localChanged=true;
+            if(seen.has(final)){ localChanged=true; return null; }
+            seen.add(final);
+            return final;
+          });
+          if(localChanged){ ev.teams[key]=out; changed=true; }
+        }
+      });
+    }
+    // 砲手／指揮標記（以名字為 key）：新名字若已自己設定過，保留新的，只清掉舊名字那筆
+    if(ev.roles){
+      Object.keys(ev.roles).forEach(n=>{
+        const owner=aliasOwner.get(n);
+        if(!owner) return;
+        if(ev.roles[owner]===undefined) ev.roles[owner]=ev.roles[n];
+        delete ev.roles[n];
+        changed=true;
+      });
+    }
+    // 指派技能／群俠技能（以名字為 key，值為陣列）：新舊名字底下的指派取聯集，避免蓋掉新名字已指派的內容
+    ['assignedSkills','assignedBaijia'].forEach(field=>{
+      if(!ev[field]) return;
+      Object.keys(ev[field]).forEach(n=>{
+        const owner=aliasOwner.get(n);
+        if(!owner) return;
+        const merged=[...new Set([...toArr(ev[field][owner]),...toArr(ev[field][n])])];
+        ev[field][owner]=merged;
+        delete ev[field][n];
+        changed=true;
+      });
+    });
+  });
+  if(changed) S.setEvents(events);
+  return changed;
+}
 // 技能刪除紀錄：絕技／群俠技能共用同一份刪除登記（不分類型，簡化邏輯，
 // 與後端共用試算表的「共用_技能刪除紀錄」是同一份資料）；儲存在「全域」層級，
 // 不用 S.k() 加組織前綴，因為技能清單本身就是跨組織共用的
