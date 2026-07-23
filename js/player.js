@@ -61,7 +61,8 @@ function renderPlayerHome(pane){
   if(me){
     const job=jobById(me.jobId);
     const curStatus=me.status||'一般成員';
-    const nextStatus=curStatus==='固定團'?'一般成員':'固定團';
+    const suspended=curStatus==='暫離';
+    const statusBtn=(s)=>`<button class="btn ${curStatus===s?'btn-blue':'btn-outline'} sm" ${suspended?'disabled style="opacity:.4;cursor:not-allowed"':''} onclick="setPlayerStatus('${s}')">${s}</button>`;
     profileHtml=`<div class="my-profile">
       <div class="my-profile-head">
         <div class="my-avatar" style="background:${job.color}">${job.img?`<img class="jimg" src="icons/jobs/${job.id}.png" alt="">`:(job.icon||job.name.charAt(0))}</div>
@@ -70,17 +71,19 @@ function renderPlayerHome(pane){
       </div>
       <div class="my-stat-row">
         <div class="my-stat" onclick="openMyHistory()" style="cursor:pointer;display:flex;align-items:center;justify-content:center" title="點擊查看歷史紀錄"><div class="my-stat-l" style="font-size:16px;font-weight:700">📜 我的歷史紀錄 ▸</div></div>
-        <div class="my-stat"><div class="my-stat-n" style="color:${attRateColor3(a.a,a.b,a.c,a.bFull,a.cFull)}">${a.a}/${a.b}/${a.c}</div><div class="my-stat-l">出場／報名／排表</div></div>
+        <div class="my-stat"><div class="my-stat-n" style="color:${attRateColor3(CUR_USER)}">${a.a}/${a.b}/${a.c}</div><div class="my-stat-l">出場／報名／排表</div></div>
         ${typeof scoreHomeStatHtml==='function'?scoreHomeStatHtml():''}
       </div>
-      ${(()=>{const note=attStatusNote(a.a,a.b,a.c,true,a.bFull,a.cFull); return note?`<div style="font-size:12px;color:${note.type==='warn1'?'var(--gold)':note.type==='warn2'?'var(--bad)':'var(--accent)'};margin-top:6px">${note.text}</div>`:'';})()}
+      ${(()=>{const note=attStatusNote(CUR_USER,true); return note?`<div style="font-size:12px;color:${note.type==='warn1'?'var(--gold)':note.type==='warn2'?'var(--bad)':'var(--accent)'};margin-top:6px">${note.text}</div>`:'';})()}
+      ${(()=>{const t=attSignupTimingNote(a.b,a.c,true); return t?`<div style="font-size:12px;color:var(--gold);margin-top:6px">${t.text}</div>`:'';})()}
       <div class="fg" style="margin-top:10px;padding-top:10px;border-top:1px dashed var(--border)">
-        <label>固定團狀態</label>
-        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:2px">
-          <span class="pill ${statusCls(curStatus)}" style="font-size:16px;padding:8px 16px;font-weight:800">${curStatus}</span>
-          <button class="btn btn-outline xs" onclick="togglePlayerFixedStatus()">切換為「${nextStatus}」</button>
+        <label>狀態</label>
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:6px">
+          ${statusBtn('可隔周上場')}${statusBtn('固定候補')}${statusBtn('固定團')}${statusBtn('一般成員')}
         </div>
-        <p class="hint" style="margin-top:6px">設為「固定團」後，管理員可在「排表系統」的固定團編輯功能中把你排入固定隊伍；之後若你改回「一般成員」，就會從固定團名單中移除，管理員之後匯入/編輯固定團時就看不到你了（已經排好的場次排表不會自動變動，需要管理員手動調整）。</p>
+        ${suspended
+          ?'<p class="hint" style="color:var(--bad);margin-top:6px">⛔ 你目前為「暫離」狀態，需聯繫管理員解除後才能自行切換狀態</p>'
+          :`<p class="hint" style="margin-top:6px">${STATUS_DESC[curStatus]||''}</p>`}
       </div>
       <div class="fg" style="margin-top:10px"><label>已滿等絕技</label><div class="skill-list">${(me.skills||[]).length?me.skills.map(s=>`<span class="skill-chip active">${s}</span>`).join(''):'<span style="color:var(--txt3);font-size:12px">尚未設定</span>'}</div></div>
       <div class="fg" style="margin-top:10px"><label>常用群俠技能</label><div class="skill-list">${(me.baijia||[]).length?me.baijia.map(s=>`<span class="skill-chip">${s}</span>`).join(''):'<span style="color:var(--txt3);font-size:12px">尚未設定</span>'}</div></div>
@@ -109,7 +112,7 @@ function renderPlayerHome(pane){
       <div style="font-size:12px;color:var(--txt2);margin-bottom:10px">📅 ${ev.date||''} ／ 目前 ${cnt} 人出席</div>
       <div style="margin-bottom:8px;font-size:13px;font-weight:600">我的狀態：<span style="color:var(--accent)">${statusLabel}</span></div>
       <div style="display:flex;gap:8px">
-        <button class="sbtn sbtn-ok ${myStatus==='attend'?'sel':''}" ${locked?'disabled style="opacity:.4;cursor:not-allowed"':''} onclick="quickSignup('${ev.id}','attend')">✅ 出席</button>
+        <button class="sbtn sbtn-ok ${myStatus==='attend'?'sel':''}" ${(locked||_isFixedReserveMe())?'disabled style="opacity:.4;cursor:not-allowed"':''} onclick="quickSignup('${ev.id}','attend')" title="${_isFixedReserveMe()?'固定候補成員為自動候補，不可全勤出席':''}">✅ 出席</button>
         <button class="sbtn sbtn-mb ${myStatus==='reserve'?'sel':''}" ${(locked||_isFixedMe())?'disabled style="opacity:.4;cursor:not-allowed"':''} onclick="quickSignup('${ev.id}','reserve')" title="${_isFixedMe()?'固定團成員為自動出席，不可候補':'可出席，但先以候補為主'}">🟡 候補</button>
         <button class="sbtn sbtn-no ${myStatus==='absent'?'sel':''}" ${locked?'disabled style="opacity:.4;cursor:not-allowed"':''} onclick="quickSignup('${ev.id}','absent')">🌙 請假</button>
       </div>
@@ -140,38 +143,32 @@ function _isFixedMe(){
   const me=S.members().find(m=>m.name===CUR_USER);
   return !!(me&&me.status==='固定團');
 }
+function _isFixedReserveMe(){
+  const me=S.members().find(m=>m.name===CUR_USER);
+  return !!(me&&me.status==='固定候補');
+}
 function _isSuspendedMe(){
   const me=S.members().find(m=>m.name===CUR_USER);
   return !!(me&&me.status==='暫離');
 }
 const SUSPENDED_MSG='⛔ 你目前為「暫離」狀態，需要管理員解除後才能報名／上傳影片';
-async function togglePlayerFixedStatus(){
+// 玩家自行切換狀態（可隔周上場／固定候補／固定團／一般成員），
+// 與管理端「成員管理」共用同一個欄位（m.status）。「暫離」僅管理端可設定，玩家端無法自行切換。
+async function setPlayerStatus(newStatus){
   { const me=S.members().find(m=>m.name===CUR_USER);
     if(me&&me.status==='暫離'){ toast('你目前為「暫離」狀態（由管理員設定），如要恢復請聯繫管理員','err'); return; } }
   const members=S.members();
   const idx=members.findIndex(m=>m.name===CUR_USER);
   if(idx<0){ toast('找不到你的成員資料，請先請管理員加入或填寫基本資料','err'); return; }
   const cur=members[idx].status||'一般成員';
-  const next=cur==='固定團'?'一般成員':'固定團';
-  const msg=next==='固定團'
-    ? '確定要設為「固定團」嗎？之後管理員排固定團隊伍時就會看到你。'
-    : '確定要改回「一般成員」嗎？之後管理員的固定團名單就不會再看到你了。';
-  if(!confirm(msg)) return;
-  members[idx]={...members[idx], status:next, updatedAt:Date.now()};
+  if(cur===newStatus) return; // 已經是這個狀態，不需要動作
+  const desc=STATUS_DESC[newStatus]||'';
+  if(!confirm('確定要把狀態切換為「'+newStatus+'」嗎？\n（'+desc+'）')) return;
+  members[idx]={...members[idx], status:newStatus, updatedAt:Date.now()};
   S.setMembers(members);
-  if(next==='固定團'){
-    // 成為固定團：未截止場次自動報名出席；原本登記的「候補」一併轉為出席（固定團不可候補）
-    const signups=S.signups(); const out={...signups}; let ch=false;
-    S.events().forEach(ev=>{
-      const lock=evLockTime(ev);
-      if(lock && Date.now()>=lock.getTime()) return;
-      const evS={...(out[ev.id]||{})};
-      if(evS[CUR_USER]==='reserve'){ evS[CUR_USER]='attend'; out[ev.id]=evS; ch=true; }
-    });
-    if(ch) S.setSignups(out);
-    if(typeof autoSignupFixedMembers==='function') autoSignupFixedMembers(CUR_USER);
-  }
-  toast('✅ 已切換為「'+next+'」，背景同步中...','ok');
+  // 固定團／固定候補：未截止場次自動報名出席／候補（衝突時強制轉為身分對應狀態）
+  if(typeof autoSignupFixedMembers==='function') autoSignupFixedMembers(CUR_USER);
+  toast('✅ 已切換為「'+newStatus+'」，背景同步中...','ok');
   renderPlayerHome(document.getElementById('pane-p-home'));
   const ok=await syncWriteNowFast();
   if(ok===true) toast('☁️ 已同步','ok');
@@ -206,10 +203,12 @@ function openMyHistory(){
   });
 
   const a=calcMyAttendance();
-  const note=attStatusNote(a.a,a.b,a.c,true,a.bFull,a.cFull);
+  const note=attStatusNote(CUR_USER,true);
+  const timingNote=attSignupTimingNote(a.b,a.c,true);
   const body=document.getElementById('history-body');
   body.innerHTML=`
     ${note?`<div style="font-size:13px;color:${note.type==='warn1'?'var(--gold)':note.type==='warn2'?'var(--bad)':'var(--accent)'};background:rgba(255,255,255,.04);border-radius:8px;padding:10px 12px;margin-bottom:12px">${note.text}</div>`:''}
+    ${timingNote?`<div style="font-size:13px;color:var(--gold);background:rgba(255,255,255,.04);border-radius:8px;padding:10px 12px;margin-bottom:12px">${timingNote.text}</div>`:''}
     <h4 style="margin-bottom:6px">🎮 比賽紀錄（${myMatches.length} 場）</h4>
     ${myMatches.length?myMatches.map(m=>{
       const p=(m.players||[]).find(pl=>pl.name===CUR_USER&&pl.camp==='我方');
@@ -240,6 +239,10 @@ async function quickSignup(evId, status){
   if(status==='reserve'){
     const me=S.members().find(m=>m.name===CUR_USER);
     if(me&&me.status==='固定團'){ toast('固定團成員為自動出席，不可登記候補；無法出席請點「請假」','err'); return; }
+  }
+  if(status==='attend'){
+    const me=S.members().find(m=>m.name===CUR_USER);
+    if(me&&me.status==='固定候補'){ toast('固定候補成員為自動候補，不可改為全勤出席；無法出席請點「請假」','err'); return; }
   }
   const label={attend:'出席',absent:'請假',reserve:'候補'}[status]||status;
   if(!confirm('確認回報「'+label+'」？')) return;
@@ -282,7 +285,7 @@ function _buildSignupCardBody(ev, isPast){
   // 出席/候補/請假/待回覆名單改為摺疊，預設收合，點「查看名單」才展開，減少版面
   const listsId='sp-lists-'+ev.id;
   return `<div class="signup-opts">
-        <button class="sbtn sbtn-ok ${my==='attend'?'sel':''}" ${locked?'disabled style="opacity:.4;cursor:not-allowed"':''} onclick="doSignup('${ev.id}','attend')">✅ 出席</button>
+        <button class="sbtn sbtn-ok ${my==='attend'?'sel':''}" ${(locked||_isFixedReserveMe())?'disabled style="opacity:.4;cursor:not-allowed"':''} onclick="doSignup('${ev.id}','attend')" title="${_isFixedReserveMe()?'固定候補成員為自動候補，不可全勤出席':''}">✅ 出席</button>
         <button class="sbtn sbtn-mb ${my==='reserve'?'sel':''}" ${(locked||_isFixedMe())?'disabled style="opacity:.4;cursor:not-allowed"':''} onclick="doSignup('${ev.id}','reserve')" title="${_isFixedMe()?'固定團成員為自動出席，不可候補':'可出席，但先以候補為主'}">🟡 候補</button>
         <button class="sbtn sbtn-no ${my==='absent'?'sel':''}" ${locked?'disabled style="opacity:.4;cursor:not-allowed"':''} onclick="doSignup('${ev.id}','absent')">🌙 請假</button>
       </div>
@@ -410,6 +413,10 @@ async function doSignup(evId,status){
     const me=S.members().find(m=>m.name===CUR_USER);
     if(me&&me.status==='固定團'){ toast('固定團成員為自動出席，不可登記候補；無法出席請點「請假」','err'); return; }
   }
+  if(status==='attend'){
+    const me=S.members().find(m=>m.name===CUR_USER);
+    if(me&&me.status==='固定候補'){ toast('固定候補成員為自動候補，不可改為全勤出席；無法出席請點「請假」','err'); return; }
+  }
   const label={attend:'出席',absent:'請假',reserve:'候補'}[status]||status;
   if(!confirm('確認回報「'+label+'」？\n（活動當天凌晨0點截止前都可再修改）')) return;
   const s=S.signups();
@@ -448,10 +455,11 @@ function renderPlayerProfile(pane){
       </div>
       <div class="my-stat-row">
         <div class="my-stat" onclick="openMyHistory()" style="cursor:pointer;display:flex;align-items:center;justify-content:center" title="點擊查看歷史紀錄"><div class="my-stat-l" style="font-size:16px;font-weight:700">📜 我的歷史紀錄 ▸</div></div>
-        <div class="my-stat"><div class="my-stat-n" style="color:${attRateColor3(a.a,a.b,a.c,a.bFull,a.cFull)}">${a.a}/${a.b}/${a.c}</div><div class="my-stat-l">出場／報名／排表</div></div>
+        <div class="my-stat"><div class="my-stat-n" style="color:${attRateColor3(CUR_USER)}">${a.a}/${a.b}/${a.c}</div><div class="my-stat-l">出場／報名／排表</div></div>
         ${typeof scoreHomeStatHtml==='function'?scoreHomeStatHtml():''}
       </div>
-      ${(()=>{const note=attStatusNote(a.a,a.b,a.c,true,a.bFull,a.cFull); return note?`<div style="font-size:12px;color:${note.type==='warn1'?'var(--gold)':note.type==='warn2'?'var(--bad)':'var(--accent)'};margin-top:6px">${note.text}</div>`:'';})()}
+      ${(()=>{const note=attStatusNote(CUR_USER,true); return note?`<div style="font-size:12px;color:${note.type==='warn1'?'var(--gold)':note.type==='warn2'?'var(--bad)':'var(--accent)'};margin-top:6px">${note.text}</div>`:'';})()}
+      ${(()=>{const t=attSignupTimingNote(a.b,a.c,true); return t?`<div style="font-size:12px;color:var(--gold);margin-top:6px">${t.text}</div>`:'';})()}
       <div class="fg" style="margin-bottom:10px"><label>已滿等絕技</label><div class="skill-list">${(me.skills||[]).map(s=>`<span class="skill-chip active">${s}</span>`).join('')||'<span style="color:var(--txt3);font-size:12px">尚未設定</span>'}</div></div>
       <div class="fg"><label>常用群俠技能</label><div class="skill-list">${(me.baijia||[]).map(s=>`<span class="skill-chip">${s}</span>`).join('')||'<span style="color:var(--tx3);font-size:12px">尚未設定</span>'}</div></div>
       ${me.note?`<div class="fg" style="margin-top:10px"><label>備註</label><span style="font-size:13px;color:var(--txt2)">${me.note}</span></div>`:''}
