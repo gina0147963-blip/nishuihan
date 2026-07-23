@@ -36,39 +36,44 @@ function jobByName(name){
   return JOBS.find(j=>j.name===n)||null;
 }
 
-// ── 出席狀態提示訊息（管理端/玩家端共用，依 a/b/c 三個數字判斷）────
-//   a = 實際出場次數／b = 報名次數（含候補）／c = 排入排表次數（含候補）
-//   bFull/cFull（可選）= 只算「出席」與「戰鬥小隊」、不含候補的部分，用來判斷
-//   b、c 超出 a 是不是因為候補沒被叫上場——如果排除候補後就不超出，屬於正常情況，
-//   不是真的沒出席/沒出賽
-//   b、c 都小於 a：常常沒報名/沒排表卻自己跑來打，提醒要好好使用系統登記
-//   b、c 都大於 a：可能是候補沒被叫上（正常）、也可能是真的報名/排表了卻沒出賽（異常）
-function attStatusNote(a,b,c,isSelf,bFull,cFull){
-  if(b<a && c<a) return {type:'warn1',
-    text: isSelf?'📢 記得到系統填寫出席狀態喔！':'📢 請提醒該成員到系統填寫出席狀態'};
-  if(b>a && c>a){
-    // 排除候補後（只看bFull/cFull）就不再超出 → 超出的部分是候補沒被叫上場，屬正常情況
-    const stillOver = (bFull===undefined||cFull===undefined) ? true : (bFull>a && cFull>a);
-    if(!stillOver) return {type:'reserve',
-      text: isSelf?'🟡 你有候補紀錄，不一定會被排上場，這不算異常喔！':'🟡 該成員有候補紀錄，可能因此未出場，屬正常情況、非異常'};
-    return {type:'warn2',
-      text: isSelf?'📢 記得要出場喔！':'📢 提醒該成員要記得出場'};
-  }
+// ── 出席狀態提示訊息（管理端/玩家端共用）──────────────────────
+// 判斷邏輯只看「最近一場已經有比賽紀錄的場次」（見 members.js 的 _recentAttStatus）：
+//   這場「報名／排表／出賽」三者若一致（都做了、或都沒做也沒出賽）→ 正常，不跳提醒；
+//   完全沒報名沒排入卻出賽了 → warn1；已報名(出席)或已排入戰鬥小隊卻沒出賽 → warn2；
+//   只有候補報名/候補排入而沒出賽 → 候補沒被叫上場，屬正常情況，用中性提示。
+// 只看最近一場、不追溯更早的場次：更早場次即使曾經異常，只要最近一場恢復正常就不再提醒
+// （但 a/b/c 顯示的數字本身仍是全部累計加總，只有「要不要跳提醒」看最近一場）。
+function attStatusNote(name,isSelf){
+  const st=(typeof _recentAttStatus==='function')?_recentAttStatus(name):null;
+  if(!st||st.type==='ok') return null;
+  if(st.type==='warn1') return {type:'warn1',
+    text: (isSelf?'📢 記得到系統填寫出席狀態喔！':'📢 請提醒該成員到系統填寫出席狀態')+`（${st.date} 那場有出賽紀錄，卻沒有報名也沒被排入排表）`};
+  if(st.type==='warn2') return {type:'warn2',
+    text: (isSelf?'📢 記得要出場喔！':'📢 提醒該成員要記得出場')+`（${st.date} 那場已報名或排入排表，卻沒有出賽紀錄）`};
+  if(st.type==='reserve') return {type:'reserve',
+    text: isSelf?'🟡 你有候補紀錄，不一定會被排上場，這不算異常喔！':'🟡 該成員有候補紀錄，可能因此未出場，屬正常情況、非異常'};
   return null;
 }
 
-// 依 a/b/c 三個數字上色：三者一致（含都是0）→ 中性灰／綠；
-// 觸發任一警示（見 attStatusNote）→ 對應的提示色；候補造成的落差 → 中性藍綠色；
-// 其餘（部分符合部分不符合）→ 中性灰
-function attRateColor3(a,b,c,bFull,cFull){
-  if(a===0&&b===0&&c===0) return 'var(--txt3)';
-  if(b<a && c<a) return 'var(--gold)';
-  if(b>a && c>a){
-    const stillOver = (bFull===undefined||cFull===undefined) ? true : (bFull>a && cFull>a);
-    return stillOver ? 'var(--bad)' : 'var(--accent)';
-  }
-  if(a===b && a===c) return 'var(--ok)';
+// 依「最近一場」的異常類型上色：沒有可比對的場次／完全沒動靜 → 中性灰；
+// warn1(金)／warn2(紅)／候補(藍綠)／正常(綠)
+function attRateColor3(name){
+  const st=(typeof _recentAttStatus==='function')?_recentAttStatus(name):null;
+  if(!st) return 'var(--txt3)';
+  if(st.type==='warn1') return 'var(--gold)';
+  if(st.type==='warn2') return 'var(--bad)';
+  if(st.type==='reserve') return 'var(--accent)';
+  if(st.type==='ok') return 'var(--ok)';
   return 'var(--txt3)';
+}
+
+// ── 報名時效性提醒：排入排表次數(c) < 報名次數(b) ──────────────
+// 代表這位成員的報名時機常常「排表已經排完了才報名」，導致有報名卻沒被排進去。
+// 用累計總數判斷（反映的是長期的報名時機落差，不是單一場次的事，所以不採最近一場邏輯）。
+function attSignupTimingNote(b,c,isSelf){
+  if(c>=b) return null;
+  return {type:'timing',
+    text: isSelf?'⏰ 請盡早報名填寫出席狀態，會影響到排表的判斷':'⏰ 該成員報名次數多於排入排表次數，請提醒他盡早報名，避免影響排表判斷'};
 }
 
 // ── 幫戰模式特別規定（僅白月燦星／白月梵星適用，其他組織不吃這條規則）──
@@ -96,14 +101,14 @@ function checkLongLeaveWarning(name){
 }
 
 
-// ── 報名截止時間（全站統一規則：活動前2天的晚上8點）──────
-// 例：活動在星期六 → 星期四 20:00 截止
+// ── 報名截止時間（全站統一規則：活動當天的凌晨0點整）──────
+// 例：活動在星期六 → 星期六 00:00 截止（即星期五午夜一到就鎖定）
 function evLockTime(ev){
   if(!ev||!ev.date) return null;
   const dateOnly=String(ev.date).slice(0,10);
   const evDay=new Date(dateOnly+'T00:00:00');
   if(isNaN(evDay.getTime())) return null;
-  return new Date(evDay.getTime()-2*24*60*60*1000+20*60*60*1000);
+  return evDay;
 }
 // 產生截止倒數文字（管理端報名管理頁用）
 function evLockCountdownText(ev){
@@ -117,12 +122,12 @@ function evLockCountdownText(ev){
   if(h>0) return `⏳ 距截止還有 ${h} 小時 ${mi} 分`;
   return `⏳ 距截止不到 ${mi} 分鐘！`;
 }
-// 截止時間的顯示文字，例如「7/9（四）20:00」
+// 截止時間的顯示文字，例如「7/11（六）00:00」
 function evLockTimeLabel(ev){
   const lock=evLockTime(ev);
   if(!lock) return '';
   const wd=['日','一','二','三','四','五','六'][lock.getDay()];
-  return (lock.getMonth()+1)+'/'+lock.getDate()+'（'+wd+'）20:00';
+  return (lock.getMonth()+1)+'/'+lock.getDate()+'（'+wd+'）00:00';
 }
 
 // ── 查詢玩家在某日期的活動中被排入哪個團（進攻/防守/機動...或候補）───
@@ -187,17 +192,20 @@ function copyTextToClipboard(text, okMsg){
   } else fail();
 }
 
-// ── 固定團自動報名 ────────────────────────────────────────
-// 固定團成員視為每場活動自動出席：凡「尚未回覆」的未截止場次，自動填為出席。
-// 已手動回覆（請假等）的不覆蓋；已截止的場次不動。
-// onlyName（可選）：只處理指定成員（例如玩家自己切換為固定團時）。
+// ── 固定團／固定候補自動報名 ──────────────────────────────
+// 固定團成員視為每場活動自動出席；固定候補成員視為每場活動自動候補
+// （candidate 候補簽到後，既有的 autoPlaceReserve() 會自動把候補簽到者排進右下角候補隊伍，
+// 因此固定候補不需要另外寫排表搬移邏輯，只要簽到狀態對了，排表會自動跟上）。
+// 凡「尚未回覆」的未截止場次，自動依身分填為出席／候補；已手動回覆（請假等）的不覆蓋；
+// 若身分與既有回覆衝突（固定團卻是候補／固定候補卻是出席），強制轉為該身分對應的狀態。
+// 已截止的場次不動。onlyName（可選）：只處理指定成員（例如玩家自己切換狀態時）。
 // 回傳是否有變動。
 function autoSignupFixedMembers(onlyName){
   try{
     const events=S.events();
     if(!events.length) return false;
-    const fixed=S.members().filter(m=>m.status==='固定團' && (!onlyName||m.name===onlyName));
-    if(!fixed.length) return false;
+    const targets=S.members().filter(m=>(m.status==='固定團'||m.status==='固定候補') && (!onlyName||m.name===onlyName));
+    if(!targets.length) return false;
     const signups=S.signups();
     let changed=false;
     const out={...signups};
@@ -206,12 +214,28 @@ function autoSignupFixedMembers(onlyName){
       if(lock && Date.now()>=lock.getTime()) return; // 已截止不動
       const evS={...(out[ev.id]||{})};
       let evChanged=false;
-      fixed.forEach(m=>{
-        if(evS[m.name]===undefined){ evS[m.name]='attend'; evChanged=true; }
+      targets.forEach(m=>{
+        const want=m.status==='固定團'?'attend':'reserve';
+        if(evS[m.name]===undefined){ evS[m.name]=want; evChanged=true; }
+        else if(evS[m.name]!==want && (evS[m.name]==='attend'||evS[m.name]==='reserve')){ evS[m.name]=want; evChanged=true; } // 身分與既有出席/候補回覆衝突，強制轉為身分對應狀態
       });
       if(evChanged){ out[ev.id]=evS; changed=true; }
     });
     if(changed) S.setSignups(out);
     return changed;
   }catch(err){ console.warn('autoSignupFixedMembers:',err.message); return false; }
+}
+
+// ── 「可隔周上場」名片反灰判斷 ───────────────────────────────
+// 檢查某成員在「指定日期往前 days 天」那天是否有出賽紀錄（含曾用名比對）。
+// 用於排表系統成員池「隔周上場」分類：上週有出賽 → 這週名片反灰提醒（可能該輪休了），
+// 上週沒出賽 → 這週正常顯示（提醒該上場了）。反灰僅供參考，名片仍可點擊拖曳。
+function _playedDaysBefore(name,dateStr,days){
+  const m=S.members().find(x=>x.name===name);
+  const alias=new Set([name,...((m&&m.aliases)||[])]);
+  const d=new Date(String(dateStr).slice(0,10)+'T00:00:00');
+  if(isNaN(d.getTime())) return false;
+  d.setDate(d.getDate()-days);
+  const target=fmtDate(d);
+  return S.matches().some(mm=>String(mm.date||'').slice(0,10)===target && (mm.participants||[]).some(n=>alias.has(n)));
 }
