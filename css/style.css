@@ -127,6 +127,7 @@ tr:hover td{background:var(--bg4)}
 .pill{display:inline-block;padding:2px 9px;border-radius:20px;font-size:11px;font-weight:600}
 .pill-job{color:#fff}
 .pill-status-core{background:rgba(240,184,67,.15);color:var(--gold);border:1px solid rgba(240,184,67,.3)}
+.pill-status-alt{background:rgba(167,139,250,.15);color:var(--purple);border:1px solid rgba(167,139,250,.3)}
 .pill-status-normal{background:rgba(79,142,247,.1);color:var(--accent);border:1px solid rgba(79,142,247,.2)}
 .pill-status-reserve{background:rgba(136,146,176,.1);color:var(--txt2);border:1px solid var(--border)}
 .pill-status-suspended{background:rgba(224,82,82,.1);color:var(--bad);border:1px solid rgba(224,82,82,.2)}
@@ -318,6 +319,7 @@ tr:hover td{background:var(--bg4)}
 .pool-group-cards{display:flex;flex-direction:column;gap:6px}
 .pool-card{width:100%;cursor:pointer}
 .pcard-disabled{opacity:.45;filter:grayscale(.8);cursor:not-allowed;background:var(--bg3)!important}
+.pcard-altweek{opacity:.55;filter:grayscale(.55)}
 .pcard-absent{opacity:.5;filter:grayscale(.7);border-style:dashed!important}
 .pcard-missing{border:2px dashed var(--bad)!important;background:rgba(224,82,82,.12)}
 .pcard-detail{margin-top:6px;padding-top:6px;border-top:1px dashed var(--border);font-size:10px;color:var(--txt2);text-align:left}
