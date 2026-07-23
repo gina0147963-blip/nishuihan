@@ -5,7 +5,14 @@ function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(
 function fmtDate(d){ if(!d)return''; const dt=new Date(d); return `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}-${String(dt.getDate()).padStart(2,'0')}`; }
 function jobById(id){ return JOBS.find(j=>j.id===id)||{name:id,color:'#8892b0'}; }
 function jobByName(n){ return JOBS.find(j=>j.name===n); }
-function statusCls(s){ return {固定團:'pill-status-core',固定班底:'pill-status-core',一般成員:'pill-status-normal',候補:'pill-status-reserve',停賽:'pill-status-suspended',暫離:'pill-status-suspended'}[s]||'pill-status-normal'; }
+function statusCls(s){ return {可隔周上場:'pill-status-alt',固定候補:'pill-status-reserve',固定團:'pill-status-core',固定班底:'pill-status-core',一般成員:'pill-status-normal',候補:'pill-status-reserve',停賽:'pill-status-suspended',暫離:'pill-status-suspended'}[s]||'pill-status-normal'; }
+// 玩家端「狀態」四個按鈕的說明文字，點哪個按鈕就顯示哪個的描述
+const STATUS_DESC = {
+  '可隔周上場':'我可以當周上場，下周休息，以此類推',
+  '固定候補':'需要我上場時，我能隨時上場（每周自動列入候補名單）',
+  '固定團':'我每周都能上場（每周自動列入出席名單，需手動點選請假）',
+  '一般成員':'我每周都會手動點擊出席、候補或請假（未手動回報時，將列入未回覆名單內）',
+};
 
 let _toastT;
 function toast(msg, type=''){
