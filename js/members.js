@@ -333,12 +333,20 @@ function renderAdminMembers(pane){
   </table></div>`;
 }
 
+// 狀態下拉選單改變時，欄位右側顯示對應狀態的說明文字（灰色小字）
+function updateStatusDesc(){
+  const el=document.getElementById('m-status-desc');
+  const sel=document.getElementById('m-status');
+  if(!el||!sel) return;
+  el.textContent=(typeof MEMBER_STATUS_DESC!=='undefined'&&MEMBER_STATUS_DESC[sel.value])||'';
+}
 function openAddMember(){
   _editMemberId=null;
   document.getElementById('modal-member-title').textContent='新增成員';
   document.getElementById('m-name').value='';
   document.getElementById('m-class').value='';
   document.getElementById('m-status').value='一般成員';
+  updateStatusDesc();
   document.getElementById('btn-del-member').classList.add('hidden');
   const clBox=document.getElementById('m-changelog-box'); if(clBox) clBox.style.display='none';
   renderTagSel('m-skills-tags', S.skillList(), []);
@@ -352,6 +360,7 @@ function openEditMember(id){
   document.getElementById('m-name').value=m.name;
   document.getElementById('m-class').value=m.jobId||'';
   document.getElementById('m-status').value=m.status||'一般成員';
+  updateStatusDesc();
   document.getElementById('btn-del-member').classList.remove('hidden');
   renderTagSel('m-skills-tags', S.skillList(), m.skills||[]);
   renderTagSel('m-baijia-tags', S.baijiaList(), m.baijia||[]);
@@ -411,20 +420,24 @@ async function saveMember(){
     toast('成員已新增','ok');
   }
   S.setMembers(members);
+  // 改名後立即清理：吸收殘留的舊名字成員紀錄、把舊名字的報名搬到新名字名下（保留改名前的出席/候補/
+  // 請假/未回覆狀態）、並把排表系統（隊伍名單/砲手指揮/指派技能）裡的舊名字也搬到新名字名下，
+  // 這樣該玩家後續的出席率等統計才會正確，排表也不會出現查無資料的舊名字卡片。
+  // ★ 順序很重要：一定要先搬移曾用名的舊報名紀錄，「之後」才跑固定團/固定候補的自動報名補齊；
+  // 如果順序相反，未截止場次會先被自動報名補上預設值，導致舊名字底下真正的改名前狀態
+  // 被判定為「新名字已經有回覆」而搬不過去，等於遺失了改名前的報名紀錄。
+  try{
+    if(typeof _dedupeMembersByName==='function') S.setMembers(_dedupeMembersByName(S.members()));
+    if(typeof _migrateAliasSignups==='function') _migrateAliasSignups();
+    if(typeof _migrateAliasLineups==='function') _migrateAliasLineups();
+  }catch(_){}
   // 若此成員為固定團／固定候補：未截止場次自動報名出席／候補（衝突時強制轉為身分對應狀態）
+  // 一定要放在上面的曾用名搬移之後，避免蓋掉改名前的真實報名紀錄（見上方說明）
   try{
     const savedName=(document.getElementById('m-name')||{value:''}).value.trim();
-    const savedM=members.find(x=>x.name===savedName);
+    const savedM=S.members().find(x=>x.name===savedName);
     if(savedM && typeof autoSignupFixedMembers==='function') autoSignupFixedMembers(savedM.name);
   }catch(_){}
-      // 改名後立即清理：吸收殘留的舊名字成員紀錄、把舊名字的報名搬到新名字名下、
-      // 並把排表系統（隊伍名單/砲手指揮/指派技能）裡的舊名字也搬到新名字名下，
-      // 這樣該玩家後續的出席率等統計才會正確，排表也不會出現查無資料的舊名字卡片
-      try{
-        if(typeof _dedupeMembersByName==='function') S.setMembers(_dedupeMembersByName(S.members()));
-        if(typeof _migrateAliasSignups==='function') _migrateAliasSignups();
-        if(typeof _migrateAliasLineups==='function') _migrateAliasLineups();
-      }catch(_){}
   closeModal('modal-member');
   renderAdminMembers(document.getElementById('pane-a-members'));
   // 立即同步，不等背景的2秒防抖排程——避免存檔後太快切換頁面/重整，
