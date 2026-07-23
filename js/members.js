@@ -109,6 +109,29 @@ function _attRate(name){
   });
   return {a,b,c,bFull,cFull};
 }
+
+// 找出「最近一場已經有比賽紀錄」的場次，判斷該場次的報名／排表／出賽三者是否一致：
+//   'ok'      = 三者一致（有報名+排入+出賽，或都沒有也沒出賽）——正常，不需提醒
+//   'warn1'   = 完全沒報名、沒排入，卻出賽了——請盡快用系統登記
+//   'warn2'   = 有報名（出席）或有排入戰鬥小隊，卻沒出賽——請記得要出場
+//   'reserve' = 只有候補報名／候補排入，沒出賽——候補沒被叫上場，屬正常情況、非異常
+//   null      = 目前還沒有任何「已有比賽紀錄」的場次可供比對（例如全新成員）
+// 刻意只看「最近一場」、不追溯更早的場次：更早場次即使曾經異常，只要最近一場恢復
+// 正常就不再提醒；a/b/c 顯示的數字本身仍是全部累計加總，不受這裡影響。
+function _recentAttStatus(name){
+  const {rows}=_attDetail(name);
+  const row=rows.find(r=>r.hasMatchData);
+  if(!row) return null;
+  const fullSignup=row.signup==='attend';
+  const reserveSignup=row.signup==='reserve';
+  const fullPlaced=!!row.place && row.place!=='候補';
+  const reservePlaced=row.place==='候補';
+  const played=row.played;
+  if(!fullSignup && !reserveSignup && !fullPlaced && !reservePlaced && played) return {type:'warn1', date:row.date};
+  if((fullSignup||fullPlaced) && !played) return {type:'warn2', date:row.date};
+  if((reserveSignup||reservePlaced) && !played) return {type:'reserve', date:row.date};
+  return {type:'ok', date:row.date};
+}
 // 出席明細中「更早場次」收合列的展開/收合
 function toggleOlderAttRow(i){
   const body=document.getElementById('older-att-body-'+i);
@@ -123,11 +146,12 @@ function openAttendanceDetail(name){
   const r=_attRate(name);
   document.getElementById('att-detail-name').textContent=name;
   {
-    const note=attStatusNote(r.a,r.b,r.c,false,r.bFull,r.cFull);
+    const note=attStatusNote(name,false);
     const noteColor=note?.type==='warn1'?'var(--gold)':note?.type==='warn2'?'var(--bad)':note?.type==='reserve'?'var(--accent)':'var(--txt2)';
+    const timingNote=attSignupTimingNote(r.b,r.c,false);
     const leaveNote=checkLongLeaveWarning(name);
     document.getElementById('att-detail-summary').innerHTML =
-      `出席：<strong style="color:${attRateColor3(r.a,r.b,r.c,r.bFull,r.cFull)}">${r.a}/${r.b}/${r.c}</strong>　（實際出場次數／報名次數／排入排表次數）${note?'<br><span style="font-size:12px;color:'+noteColor+'">'+note.text+'</span>':''}${leaveNote?'<br><span style="font-size:12px;color:var(--bad)">'+leaveNote.text+'</span>':''}${typeof scoreAttSummaryHtml==='function'?scoreAttSummaryHtml(name):''}`;
+      `出席：<strong style="color:${attRateColor3(name)}">${r.a}/${r.b}/${r.c}</strong>　（實際出場次數／報名次數／排入排表次數）${note?'<br><span style="font-size:12px;color:'+noteColor+'">'+note.text+'</span>':''}${timingNote?'<br><span style="font-size:12px;color:var(--gold)">'+timingNote.text+'</span>':''}${leaveNote?'<br><span style="font-size:12px;color:var(--bad)">'+leaveNote.text+'</span>':''}${typeof scoreAttSummaryHtml==='function'?scoreAttSummaryHtml(name):''}`;
   }
   // 每場活動顯示三項狀態：報名／排表／出賽
   const signupBadge=s=>s==='attend'?'<span style="color:var(--ok);font-weight:700">✅ 出席</span>'
@@ -263,12 +287,14 @@ function _memberRowsHtml(filtered, actMap, qa){
       <td><strong${isAway?' style="color:var(--bad)"':''}>${isAway?'🚫 ':''}${m.name}</strong>${isAway?'<br><span style="font-size:10px;color:var(--bad);font-weight:700">⛔ 暫離中（不列入排表/催繳）</span>':''}${inactive?'<br><span style="font-size:10px;color:var(--bad)">💤 從未出賽/報名</span>':''}${(m.changeLog&&m.changeLog.length)?`<br><span style="font-size:10px;color:var(--txt3)" title="${m.changeLog.map(c=>c.t+' '+c.type+'：'+c.from+'→'+c.to).join('&#10;')}">📝 ${m.changeLog[m.changeLog.length-1].t} ${m.changeLog[m.changeLog.length-1].type}</span>`:''}</td>
       <td><span class="pill pill-job" style="background:${job.color};color:#fff">${job.name}</span></td>
       <td>${(function(){
-        const c=attRateColor3(a.a,a.b,a.c,a.bFull,a.cFull);
-        const note=attStatusNote(a.a,a.b,a.c,false,a.bFull,a.cFull);
+        const c=attRateColor3(m.name);
+        const note=attStatusNote(m.name,false);
+        const timingNote=attSignupTimingNote(a.b,a.c,false);
         const leaveNote=checkLongLeaveWarning(m.name);
         const badge=note?` <span title="${note.text}" style="cursor:help">${note.type==='reserve'?'🟡':'📢'}</span>`:'';
+        const timingBadge=timingNote?` <span title="${timingNote.text}" style="cursor:help">⏰</span>`:'';
         const leaveBadge=leaveNote?` <span title="${leaveNote.text}" style="cursor:help">🏖️</span>`:'';
-        return `<button class="btn btn-outline xs" style="color:${c};font-weight:700" onclick="openAttendanceDetail('${m.name.replace(/'/g,"\\'")}')">${a.a}/${a.b}/${a.c}</button>${badge}${leaveBadge}<br><span style="font-size:10px;color:var(--txt3)">（出場／報名／排表）</span>`;
+        return `<button class="btn btn-outline xs" style="color:${c};font-weight:700" onclick="openAttendanceDetail('${m.name.replace(/'/g,"\\'")}')">${a.a}/${a.b}/${a.c}</button>${badge}${timingBadge}${leaveBadge}<br><span style="font-size:10px;color:var(--txt3)">（出場／報名／排表）</span>`;
       })()}</td>
       ${(typeof scoreMemberCellHtml==='function')?scoreMemberCellHtml(m.name):''}
       <td style="font-size:11px;color:var(--txt2);max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${(m.skills||[]).join('、')||'—'}</td>
@@ -385,21 +411,11 @@ async function saveMember(){
     toast('成員已新增','ok');
   }
   S.setMembers(members);
-  // 若此成員為固定團：未截止場次自動報名出席，原登記的候補轉為出席（固定團不可候補）
+  // 若此成員為固定團／固定候補：未截止場次自動報名出席／候補（衝突時強制轉為身分對應狀態）
   try{
     const savedName=(document.getElementById('m-name')||{value:''}).value.trim();
     const savedM=members.find(x=>x.name===savedName);
-    if(savedM&&savedM.status==='固定團'){
-      const signups=S.signups(); const out={...signups}; let ch=false;
-      S.events().forEach(ev=>{
-        const lock=evLockTime(ev);
-        if(lock && Date.now()>=lock.getTime()) return;
-        const evS={...(out[ev.id]||{})};
-        if(evS[savedM.name]==='reserve'){ evS[savedM.name]='attend'; out[ev.id]=evS; ch=true; }
-      });
-      if(ch) S.setSignups(out);
-      if(typeof autoSignupFixedMembers==='function') autoSignupFixedMembers(savedM.name);
-    }
+    if(savedM && typeof autoSignupFixedMembers==='function') autoSignupFixedMembers(savedM.name);
   }catch(_){}
       // 改名後立即清理：吸收殘留的舊名字成員紀錄、把舊名字的報名搬到新名字名下、
       // 並把排表系統（隊伍名單/砲手指揮/指派技能）裡的舊名字也搬到新名字名下，
