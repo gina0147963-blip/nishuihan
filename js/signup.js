@@ -2,7 +2,7 @@
 // ADMIN: SIGNUP MANAGER
 // ============================================================
 function renderAdminSignupMgr(pane){
-  // 補跑固定團自動報名：涵蓋其他裝置新建的場次、或成員後來才被設為固定團的情況（冪等，有變動才寫入）
+  // 補跑固定團／固定候補自動報名：涵蓋其他裝置新建的場次、或成員後來才被設為固定團/固定候補的情況（冪等，有變動才寫入）
   if(typeof autoSignupFixedMembers==='function') autoSignupFixedMembers();
   // 依活動日期由新到舊排序（同日再以建立時間新→舊）
   const events=S.events().slice().sort((a,b)=>String(b.date||'').localeCompare(String(a.date||''))||((b.createdAt||0)-(a.createdAt||0)));
@@ -94,6 +94,10 @@ async function adminSetSignup(evId,name,status){
   if(status==='reserve'){
     const m=S.members().find(x=>x.name===name);
     if(m&&m.status==='固定團'){ toast('「'+name+'」是固定團成員，為自動出席、不可改為候補；無法出席請改為請假','err'); return; }
+  }
+  if(status==='attend'){
+    const m=S.members().find(x=>x.name===name);
+    if(m&&m.status==='固定候補'){ toast('「'+name+'」是固定候補成員，為自動候補、不可改為全勤出席；無法出席請改為請假','err'); return; }
   }
   const signups=S.signups();
   const evS={...(signups[evId]||{})};
@@ -270,9 +274,9 @@ function submitCreateEvent(){
       events.push(newEv);
       S.setEvents(events);
       closeModal('modal-event');
-      // 固定團成員自動報名出席（之後個別點請假即可取消）
+      // 固定團／固定候補成員自動報名出席／候補（之後個別點請假即可取消）
       if(typeof autoSignupFixedMembers==='function') autoSignupFixedMembers();
-      toast('✅ 場次「'+name+'」已建立，固定團成員已自動報名出席','ok');
+      toast('✅ 場次「'+name+'」已建立，固定團／固定候補成員已自動完成報名','ok');
     }
     renderAdminSignupMgr(document.getElementById('pane-a-signup-mgr'));
   }catch(err){
