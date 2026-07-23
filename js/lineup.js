@@ -209,12 +209,14 @@ function buildSummaryBar(ev,members){
 }
 
 // 玩家池卡片（可點擊展開技能）
-function playerPoolCardHTML(m,draggable){
+// altPlayedGrey：「可隔周上場」成員上週已出賽時的反灰提醒（僅視覺提示，不影響點擊/拖曳）
+function playerPoolCardHTML(m,draggable,altPlayedGrey){
   const job=jobById(m.jobId);
   const esc=m.name.replace(/'/g,"\\'");
-  return `<div class="pcard pool-card jbg-${job.id}${draggable?'':' pcard-disabled'}"
+  return `<div class="pcard pool-card jbg-${job.id}${draggable?'':' pcard-disabled'}${altPlayedGrey?' pcard-altweek':''}"
     ${draggable?`draggable="true" ondragstart="startDrag(event,'${esc}','pool')" ondragend="this.classList.remove('dragging')"`:''}
-    onclick="togglePlayerDetail(this,'${esc}')">
+    onclick="togglePlayerDetail(this,'${esc}')"
+    ${altPlayedGrey?'title="上週已出賽，這週可能輪休（僅供提醒，仍可排入）"':''}>
     <div class="jdot" style="background:${job.color}">${job.img?`<img class="jimg" src="icons/jobs/${job.id}.png" alt="">`:(job.icon||job.name.charAt(0))}</div>
     <div class="pname">${m.name}</div>
     <div class="pjob" style="color:${job.color}">${job.name}</div>
@@ -921,7 +923,9 @@ function buildPoolGroups(ev,locked){
   const assigned=getAssigned(ev);
   const qc=((document.getElementById('pool-class-f')||{}).value)||'';
   const qs=(((document.getElementById('pool-search-f')||{}).value)||'').toLowerCase();
-  const coreNames=[],attendNames=[],absentNames=[],pendingNames=[],reserveNames=[];
+  // 「可隔周上場」的反灰提醒只在一般幫戰/領地戰場次適用，俱樂部的「約戰」是彈性約打，不適用這套輪休判斷
+  const altGreyApplies=!(CUR_MODE==='club' && ev.type==='約戰');
+  const coreNames=[],attendNames=[],altNames=[],absentNames=[],pendingNames=[],reserveNames=[];
   members.forEach(m=>{
     if(assigned.has(m.name)) return;
     if(qc&&m.jobId!==qc) return;
@@ -929,15 +933,21 @@ function buildPoolGroups(ev,locked){
     const st=signups[m.name];
     // 固定團成員（且本場次未請假）固定置頂顯示，方便管理員直接拖曳到隊伍，不再自動塞進候補
     if(m.status==='固定團'&&st!=='absent'){ coreNames.push(m); return; }
+    // 可隔周上場成員（且本場次未請假）獨立分類顯示，並依上週是否出賽決定要不要反灰提醒
+    if(m.status==='可隔周上場'&&st!=='absent'){ altNames.push(m); return; }
     if(m.status==='暫離') return; // 暫離成員不出現在排表成員池
     if(st==='attend') attendNames.push(m);
     else if(st==='absent') absentNames.push(m);
     else if(st==='reserve') reserveNames.push(m); // 報名選「候補」（會自動排入右側候補隊伍）
-    else if(m.status==='候補') reserveNames.push(m);
+    else if(m.status==='候補'||m.status==='固定候補') reserveNames.push(m); // 一般情況固定候補已被自動排入候補隊伍而不會出現在這裡，這是保險用的備援分類
     else pendingNames.push(m);
   });
   const sec=(title,list,color,drag)=>!list.length?'':`<div class="pool-group"><div class="pool-group-hd" style="color:${color}">${title}（${list.length}）</div><div class="pool-group-cards">${list.map(m=>playerPoolCardHTML(m,drag&&!locked)).join('')}</div></div>`;
-  return (sec('⭐ 固定團',coreNames,'var(--gold)',true)+sec('✅ 出席',attendNames,'var(--ok)',true)+sec('❓ 待定',pendingNames,'var(--gold)',true)+sec('📋 候補',reserveNames,'var(--txt2)',true)+sec('🌙 請假',absentNames,'var(--txt3)',false))||'<p class="hint">無符合成員</p>';
+  const secAlt=!altNames.length?'':`<div class="pool-group"><div class="pool-group-hd" style="color:var(--purple)">🔁 隔周上場（${altNames.length}）</div><div class="pool-group-cards">${altNames.map(m=>{
+    const playedLastWeek=altGreyApplies && _playedDaysBefore(m.name,ev.date,7);
+    return playerPoolCardHTML(m,!locked,playedLastWeek);
+  }).join('')}</div></div>`;
+  return (sec('⭐ 固定團',coreNames,'var(--gold)',true)+sec('✅ 出席',attendNames,'var(--ok)',true)+secAlt+sec('❓ 待定',pendingNames,'var(--gold)',true)+sec('📋 候補',reserveNames,'var(--txt2)',true)+sec('🌙 請假',absentNames,'var(--txt3)',false))||'<p class="hint">無符合成員</p>';
 }
 function refreshPoolOnly(){
   if(!_curEventId) return;
