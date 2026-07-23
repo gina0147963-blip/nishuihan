@@ -286,7 +286,7 @@ function _buildSignupCardBody(ev, isPast){
         <button class="sbtn sbtn-mb ${my==='reserve'?'sel':''}" ${(locked||_isFixedMe())?'disabled style="opacity:.4;cursor:not-allowed"':''} onclick="doSignup('${ev.id}','reserve')" title="${_isFixedMe()?'固定團成員為自動出席，不可候補':'可出席，但先以候補為主'}">🟡 候補</button>
         <button class="sbtn sbtn-no ${my==='absent'?'sel':''}" ${locked?'disabled style="opacity:.4;cursor:not-allowed"':''} onclick="doSignup('${ev.id}','absent')">🌙 請假</button>
       </div>
-      ${_isSuspendedMe()?'<p class="hint" style="color:var(--bad)">⛔ 你目前為「暫離」狀態，需要管理員解除後才能報名／上傳影片</p>':locked?'<p class="hint" style="color:var(--bad)">🔒 已截止報名（活動前2天的晚上8點起鎖定，無法再更改）</p>':''}
+      ${_isSuspendedMe()?'<p class="hint" style="color:var(--bad)">⛔ 你目前為「暫離」狀態，需要管理員解除後才能報名／上傳影片</p>':locked?'<p class="hint" style="color:var(--bad)">🔒 已截止報名（活動當天凌晨0點起鎖定，無法再更改）</p>':''}
       <div class="signup-cnt" style="cursor:pointer" onclick="toggleSignupLists('${listsId}')">✅ 出席 <strong>${att.length}</strong> ／ 🟡 候補 <strong>${rsv.length}</strong> ／ 🌙 請假 <strong>${abs.length}</strong> ／ ⏳ 待回覆 <strong>${pending.length}</strong> <span id="${listsId}-arrow" style="color:var(--txt3);font-size:12px">▾ 查看名單</span></div>
       <div id="${listsId}" class="hidden">
         ${listBlock('✅','出席名單','var(--ok)',att)}
@@ -399,19 +399,19 @@ function toggleSignupPast(evId){
 }
 function _isLocked(evId){
   const ev=S.events().find(e=>e.id===evId);
-  const lockTime=evLockTime(ev); // 全站統一規則見 helpers.js：活動前2天的晚上8點
+  const lockTime=evLockTime(ev); // 全站統一規則見 helpers.js：活動當天的凌晨0點整
   if(!lockTime) return false;
   return Date.now()>=lockTime.getTime();
 }
 async function doSignup(evId,status){
   if(_isSuspendedMe()){ toast(SUSPENDED_MSG,'err'); return; }
-  if(_isLocked(evId)){ toast('此活動已於前2天晚上8點截止，無法再更改報名','err'); return; }
+  if(_isLocked(evId)){ toast('此活動已於當天凌晨0點截止，無法再更改報名','err'); return; }
   if(status==='reserve'){
     const me=S.members().find(m=>m.name===CUR_USER);
     if(me&&me.status==='固定團'){ toast('固定團成員為自動出席，不可登記候補；無法出席請點「請假」','err'); return; }
   }
   const label={attend:'出席',absent:'請假',reserve:'候補'}[status]||status;
-  if(!confirm('確認回報「'+label+'」？\n（活動前2天晚上8點截止前都可再修改）')) return;
+  if(!confirm('確認回報「'+label+'」？\n（活動當天凌晨0點截止前都可再修改）')) return;
   const s=S.signups();
   if(!s[evId])s[evId]={};
   const prev=s[evId][CUR_USER];
