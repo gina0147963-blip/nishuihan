@@ -167,6 +167,9 @@ function openAttendanceDetail(name){
   const RECENT_N=5;
   const recentRows=rows.slice(0,RECENT_N);
   const olderRows=rows.slice(RECENT_N);
+  // 尚未有比賽紀錄的場次（多半是還沒開打的未來場次）：報名／排表狀態僅供參考，
+  // 明確標示「尚未計入統計」，避免看起來像是已經算進上方 a/b/c 的數字裡
+  const notCountedTag=x=>!x.hasMatchData?'<div style="font-size:11px;color:var(--txt3);margin-top:4px">⏳ 這場尚未有比賽紀錄，報名／排表僅供參考，尚未計入上方出席次數統計</div>':'';
   const rowCardHtml=x=>`
       <div style="border:1px solid var(--border);border-radius:8px;padding:8px 12px">
         <div style="font-weight:700;margin-bottom:6px">${x.date}　${x.name}${x.type?'（'+x.type+'）':''}</div>
@@ -175,6 +178,7 @@ function openAttendanceDetail(name){
           <span>排表：${placeBadge(x.place)}</span>
           <span>出賽：${playBadge(x)}${x.dayMatchCount>1?' <span style="color:var(--txt3);font-weight:400">（當天共'+x.dayMatchCount+'場比賽'+(x.dayPlayedCount>0?'，計入出場次數'+x.dayPlayedCount+'次）':'）')+'</span>':''}</span>
         </div>
+        ${notCountedTag(x)}
         ${typeof scoreAttRowHtml==='function'?scoreAttRowHtml(name, x.evId):''}
       </div>`;
   const recentHtml=recentRows.length
@@ -194,6 +198,7 @@ function openAttendanceDetail(name){
               <span>排表：${placeBadge(x.place)}</span>
               <span>出賽：${playBadge(x)}${x.dayMatchCount>1?' <span style="color:var(--txt3);font-weight:400">（當天共'+x.dayMatchCount+'場比賽'+(x.dayPlayedCount>0?'，計入出場次數'+x.dayPlayedCount+'次）':'）')+'</span>':''}</span>
             </div>
+            ${notCountedTag(x)}
             ${typeof scoreAttRowHtml==='function'?scoreAttRowHtml(name, x.evId):''}
           </div>
         </div>`).join('')}</div>`
