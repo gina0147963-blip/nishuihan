@@ -49,10 +49,19 @@ function deleteMatchById(id){
   renderAdminMatches(document.getElementById('pane-a-matches'));
 }
 
-// ── 編輯比賽紀錄（僅限活動日期與勝敗結果）──────────────────────
+// ── 編輯比賽紀錄（活動日期／活動類型／勝敗結果）──────────────────
 // 比賽數據（傷害、參戰名單等）一律以官方CSV匯入為準，不開放手動編輯；
-// 但日期或勝敗結果偶爾會因CSV欄位誤植/匯入時機問題而記錯，開放這兩欄讓管理員修正，
+// 但日期、類型、勝敗結果偶爾會因CSV欄位誤植/匯入時機問題而記錯，開放這三欄讓管理員修正，
 // 修正日期後，出席率等會依比賽紀錄比對日期的統計也會跟著自動修正。
+// 活動類型選項依目前所在的幫會／俱樂部系統各自對應（跟報名建立場次時的活動類型一致）；
+// 若這筆紀錄目前的類型不在對應清單內（例如CSV匯入時預設寫入的「聯賽」），
+// 會額外把這個舊值加進選項裡，避免一開啟編輯視窗就被悄悄換掉。
+function _matchTypeOptions(current){
+  const presets = CUR_MODE==='club' ? ['領地戰','約戰'] : ['單周聯賽','雙周聯賽'];
+  const opts = presets.slice();
+  if(current && !opts.includes(current)) opts.push(current);
+  return opts.map(t=>`<option value="${t}">${t}</option>`).join('');
+}
 function _ensureMatchEditModal(){
   if(document.getElementById('modal-match-edit')) return;
   const div=document.createElement('div');
@@ -61,8 +70,9 @@ function _ensureMatchEditModal(){
   div.innerHTML=`<div class="modal">
     <div class="modal-hd"><h3>✏️ 編輯比賽紀錄</h3><button class="close-btn" onclick="closeModal('modal-match-edit')">✕</button></div>
     <div class="modal-body">
-      <p class="hint" style="margin-bottom:8px">僅能修正活動日期與勝敗結果；比賽數據（傷害、參戰名單等）需重新匯入官方CSV才能更新。</p>
+      <p class="hint" style="margin-bottom:8px">僅能修正活動日期、活動類型與勝敗結果；比賽數據（傷害、參戰名單等）需重新匯入官方CSV才能更新。</p>
       <div class="fg"><label>活動日期</label><input type="date" id="me-date" class="fi"></div>
+      <div class="fg" style="margin-top:8px"><label>活動類型</label><select id="me-type" class="fsel"></select></div>
       <div class="fg" style="margin-top:8px"><label>勝敗結果</label><select id="me-result" class="fsel">
         <option value="勝利">勝利</option>
         <option value="失敗">失敗</option>
@@ -81,18 +91,21 @@ function openMatchEdit(id){
   _ensureMatchEditModal();
   _editMatchId=id;
   document.getElementById('me-date').value=(m.date||'').slice(0,10);
+  document.getElementById('me-type').innerHTML=_matchTypeOptions(m.type);
+  document.getElementById('me-type').value=m.type||'';
   document.getElementById('me-result').value=m.result||'勝利';
   openModal('modal-match-edit');
 }
 async function saveMatchEdit(){
   if(!_editMatchId) return;
   const date=(document.getElementById('me-date').value||'').trim();
+  const type=document.getElementById('me-type').value;
   const result=document.getElementById('me-result').value;
   if(!date){ toast('請選擇活動日期','err'); return; }
   const matches=S.matches();
   const idx=matches.findIndex(x=>x.id===_editMatchId);
   if(idx<0){ toast('找不到此比賽紀錄','err'); return; }
-  matches[idx]={...matches[idx], date, result, updatedAt:Date.now()};
+  matches[idx]={...matches[idx], date, type, result, updatedAt:Date.now()};
   S.setMatches(matches);
   closeModal('modal-match-edit');
   toast('✅ 已更新，背景同步中...','ok');
@@ -553,5 +566,3 @@ async function saveMatchVideos(){
   const ok=await syncWriteNowFast();
   toast(ok===true?('✅ 已儲存 '+videos.length+' 個影片並同步'):'⚠️ 已儲存於本機，雲端同步失敗，背景將自動重試', ok===true?'ok':'err');
 }
-
-
