@@ -328,11 +328,17 @@ function openImportConfirm(){
   if(!_pendingImport) return;
   const p=_pendingImport;
   const box=document.getElementById('import-confirm-body');
+  // 若同一天、同對手已有紀錄（匯入後會覆蓋），活動類型/勝負預設帶入原本的值，避免覆蓋時被悄悄改掉
+  const existing = S.matches().find(m=>String(m.date||'').slice(0,10)===String(p.date).slice(0,10) && m.enemy===p.enemyClubName);
   box.innerHTML=`
     <div class="frow">
       <div class="fg full"><label>⚠️ 比賽日期（CSV檔名日期未必正確，請確認實際比賽日期）</label><input id="ic-date" class="fi" type="date" value="${p.date}"></div>
       <div class="fg full"><label>我方俱樂部</label><input class="fi" value="${p.ourClubName}（${p.ourCount}人）" disabled></div>
       <div class="fg full"><label>對方俱樂部</label><input id="ic-enemy" class="fi" value="${p.enemyClubName}（${p.enemyCount}人）" disabled></div>
+      <div class="fg full">
+        <label>活動類型 *（檔案內無此資訊，請手動選擇）</label>
+        <select id="ic-type" class="fsel">${_matchTypeOptions(existing&&existing.type)}</select>
+      </div>
       <div class="fg full">
         <label>本場勝負 *（檔案內無此資訊，請手動選擇）</label>
         <select id="ic-result" class="fsel">
@@ -344,6 +350,8 @@ function openImportConfirm(){
     </div>
     <p class="hint mt8">將會匯入 ${p.players.length} 筆玩家數據（我方 ${p.ourCount} 人／對方 ${p.enemyCount} 人）。匯入後，出現過的玩家姓名若不在目前成員資料庫中，會自動新增（職業會一併帶入）。</p>
   `;
+  if(existing&&existing.type) document.getElementById('ic-type').value=existing.type;
+  if(existing&&existing.result) document.getElementById('ic-result').value=existing.result;
   openModal('modal-import-confirm');
 }
 
@@ -352,6 +360,7 @@ function confirmImport(){
   if(!_pendingImport){ toast('匯入資料已失效，請重新選擇檔案','err'); return; }
   const p=_pendingImport;
   const date=document.getElementById('ic-date').value || p.date;
+  const type=document.getElementById('ic-type').value;
   const result=document.getElementById('ic-result').value;
 
   // 1) 自動把新出現的玩家加入成員資料庫
@@ -362,7 +371,7 @@ function confirmImport(){
   const existing = matches.find(m=>String(m.date||'').slice(0,10)===String(date).slice(0,10) && m.enemy===p.enemyClubName);
   const matchData = {
     date,
-    type:'聯賽',
+    type,
     enemy:p.enemyClubName,
     result,
     ourCount:p.ourCount,
