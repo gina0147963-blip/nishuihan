@@ -361,3 +361,53 @@ document.addEventListener('DOMContentLoaded', ()=>{
     }
   }catch(_){}
 });
+
+// ============================================================
+// 新版本偵測（背景輪詢，不影響登入狀態）
+// ============================================================
+// 網頁本身（HTML/JS/CSS）已經是「連線優先」：每次重新整理都會抓最新檔案，只有離線時才退回快取，
+// 所以「重新整理」本來就會拿到新版。真正的風險只在「分頁已經開著、遲遲沒有重新整理」的情況——
+// 這種分頁不會自動抓到新程式碼。這裡背景定期重新抓一次 index.html，比對版本號（?v=）跟目前
+// 這個分頁實際在跑的版本是否一致，不一致就跳出提示，請使用者手動重新整理；完全不動登入狀態
+// （localStorage 的 gw_session 不受影響），只是提醒「該重整了」。
+function _currentBuildVersion(){
+  try{
+    const scripts=document.querySelectorAll('script[src*="app.js"]');
+    for(const s of scripts){
+      const m=(s.getAttribute('src')||'').match(/[?&]v=([^&"']+)/);
+      if(m) return m[1];
+    }
+  }catch(_){}
+  return '';
+}
+let _updateDetected=false;
+async function _checkForUpdate(){
+  if(_updateDetected) return;
+  try{
+    const cur=_currentBuildVersion();
+    if(!cur) return; // 抓不到目前版本號（例如開發環境沒帶版本參數）就不比對，避免誤判
+    const res=await fetch('index.html?_ts='+Date.now(), {cache:'no-store'});
+    if(!res.ok) return;
+    const html=await res.text();
+    const m=html.match(/app\.js\?v=([^"'&\s]+)/);
+    if(m && m[1] && m[1]!==cur){
+      _updateDetected=true;
+      _showUpdateBanner();
+    }
+  }catch(_){ /* 離線或抓取失敗時安靜略過，等下一輪再試，不打擾使用者 */ }
+}
+function _showUpdateBanner(){
+  if(document.getElementById('update-banner')) return;
+  const topOffset = document.getElementById('maint-banner') ? 44 : 0;
+  const el=document.createElement('div');
+  el.id='update-banner';
+  el.style.cssText='position:fixed;top:'+topOffset+'px;left:0;right:0;z-index:9998;background:#1d4ed8;color:#fff;'
+    +'padding:10px 14px;font-size:14px;line-height:1.5;text-align:center;box-shadow:0 2px 8px rgba(0,0,0,.3);'
+    +'display:flex;align-items:center;justify-content:center;gap:12px;flex-wrap:wrap';
+  el.innerHTML='<span>🔄 系統已推出新版本，請重新整理頁面以取得最新功能與資料（登入狀態不受影響）</span>'
+    +'<button onclick="location.reload()" style="background:#fff;color:#1d4ed8;border:none;border-radius:6px;padding:6px 16px;font-weight:800;cursor:pointer;font-size:13px">立即重新整理</button>';
+  document.body.appendChild(el);
+  document.body.style.paddingTop = (topOffset+44)+'px';
+}
+setInterval(_checkForUpdate, 5*60*1000); // 每 5 分鐘背景檢查一次
+document.addEventListener('visibilitychange', ()=>{ if(document.visibilityState==='visible') _checkForUpdate(); }); // 切回分頁時立刻檢查一次，久放的分頁能更快發現
