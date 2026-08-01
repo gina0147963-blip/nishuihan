@@ -445,30 +445,39 @@ function autoAddMembersFromImport(allPlayers){
 // ============================================================
 let _mdId=null,_mdSortKey='pDamage',_mdSortDir=-1;
 const MD_COLS=[['job','職業'],['kills','擊敗'],['assist','助攻'],['resource','資源'],['pDamage','對玩家傷害'],['bDamage','對建築傷害'],['heal','治療值'],['taken','承受傷害'],['hurt','重傷'],['revive','化羽/清泉'],['burn','焚骨']];
+const MD_SORT_OPTS=[['pDamage','對玩家傷害'],['bDamage','對建築傷害'],['heal','治療值'],['taken','承受傷害'],['kills','擊敗'],['assist','助攻'],['resource','資源'],['hurt','重傷'],['revive','化羽/清泉'],['burn','焚骨'],['job','職業'],['name','玩家']];
 function openMatchDetail(id){ _mdId=id; _mdSortKey='pDamage'; _mdSortDir=-1; renderMatchDetail(); openModal('modal-match-detail'); }
-function mdSort(key){ if(_mdSortKey===key){_mdSortDir*=-1;}else{_mdSortKey=key;_mdSortDir=-1;} renderMatchDetail(); }
+function mdSortChange(){ _mdSortKey=document.getElementById('md-sort-key').value; renderMatchDetail(); }
+function mdSortToggleDir(){ _mdSortDir*=-1; renderMatchDetail(); }
+// 比賽數據改用「每人一張卡片、欄位在卡片內換行排列」的方式呈現（原本是12欄的寬表格，
+// 手機螢幕放不下、只能橫向捲動才看得到後面欄位）。改成直向堆疊的卡片後，
+// 不管螢幕多窄都不會需要橫向捲動；排序改用下拉選單＋方向切換鈕（原本點欄位標題排序，
+// 現在沒有橫向表頭可點了）。
 function renderMatchDetail(){
   const m=S.matches().find(x=>x.id===_mdId); if(!m) return;
   const jobColor=name=>{ const mem=S.members().find(x=>x.name===name); if(mem)return jobById(mem.jobId).color; const jb=jobByName((m.players||[]).find(p=>p.name===name)?.job); return jb?jb.color:'#e8eaf6'; };
-  const arrow=k=>_mdSortKey===k?(_mdSortDir<0?' ▼':' ▲'):'';
   const section=(camp,label)=>{
-    let rows=(m.players||[]).filter(pl=>pl.camp===camp);
-    rows.sort((a,b)=>{ const va=a[_mdSortKey],vb=b[_mdSortKey]; if(_mdSortKey==='job'){return String(va||'').localeCompare(String(vb||''))*(_mdSortDir);} return ((vb||0)-(va||0))*(-_mdSortDir<0?1:1)*(_mdSortDir<0?1:-1); });
-    // 修正排序方向
-    rows=(m.players||[]).filter(pl=>pl.camp===camp).slice().sort((a,b)=>{
-      if(_mdSortKey==='job'){ return String(a.job||'').localeCompare(String(b.job||''))*_mdSortDir; }
+    const rows=(m.players||[]).filter(pl=>pl.camp===camp).slice().sort((a,b)=>{
+      if(_mdSortKey==='job'||_mdSortKey==='name'){ return String(a[_mdSortKey]||'').localeCompare(String(b[_mdSortKey]||''))*_mdSortDir; }
       return ((a[_mdSortKey]||0)-(b[_mdSortKey]||0))*_mdSortDir;
     });
     if(!rows.length) return '';
     return `<h4 style="margin:10px 0 6px">${label}（${rows.length}人）</h4>
-    <div class="tbl-wrap"><table style="font-size:11px">
-      <thead><tr><th onclick="mdSort('name')" style="cursor:pointer">玩家</th>${MD_COLS.map(c=>`<th onclick="mdSort('${c[0]}')" style="cursor:pointer;white-space:nowrap">${c[1]}${arrow(c[0])}</th>`).join('')}</tr></thead>
-      <tbody>${rows.map(pl=>`<tr><td style="white-space:nowrap"><strong style="color:${jobColor(pl.name)}">${pl.name}</strong></td>${MD_COLS.map(c=>`<td>${c[0]==='job'?(pl.job||''):fmtNum(pl[c[0]]||0)}</td>`).join('')}</tr>`).join('')}</tbody>
-    </table></div>`;
+    <div style="display:flex;flex-direction:column;gap:6px">${rows.map(pl=>`
+      <div style="border:1px solid var(--border);border-radius:8px;padding:8px 10px">
+        <div style="font-weight:700;color:${jobColor(pl.name)};margin-bottom:4px">${pl.name}<span style="font-weight:400;color:var(--txt2);font-size:12px">　${pl.job||''}</span></div>
+        <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:2px 12px;font-size:12px;color:var(--txt2)">
+          ${MD_COLS.filter(c=>c[0]!=='job').map(c=>`<div style="display:flex;justify-content:space-between;gap:6px"><span>${c[1]}</span><strong style="color:var(--txt)">${fmtNum(pl[c[0]]||0)}</strong></div>`).join('')}
+        </div>
+      </div>`).join('')}</div>`;
   };
   document.getElementById('match-detail-body').innerHTML=`
     <div style="margin-bottom:8px;font-size:13px"><b>${(m.date||'').slice(0,10)}</b> ／ vs ${m.enemy||''} ／ <span style="color:${m.result==='勝利'?'var(--ok)':'var(--bad)'}">${m.result||''}</span></div>
-    <p class="hint" style="margin-bottom:6px">點欄位標題可排序</p>
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap">
+      <label style="font-size:12px;color:var(--txt2);white-space:nowrap">排序依據</label>
+      <select id="md-sort-key" class="fsel sm" style="flex:1 1 130px;min-width:0" onchange="mdSortChange()">${MD_SORT_OPTS.map(o=>`<option value="${o[0]}" ${o[0]===_mdSortKey?'selected':''}>${o[1]}</option>`).join('')}</select>
+      <button class="btn btn-outline xs" onclick="mdSortToggleDir()">${_mdSortDir<0?'▼ 高到低':'▲ 低到高'}</button>
+    </div>
     ${section('我方','🔵 我方')}${section('對方','🔴 對方')}
     ${!(m.players||[]).length?'<p class="hint">此紀錄無詳細數據</p>':''}`;
 }
