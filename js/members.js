@@ -127,9 +127,13 @@ function _recentAttStatus(name){
   const fullPlaced=!!row.place && row.place!=='候補';
   const reservePlaced=row.place==='候補';
   const played=row.played;
+  // 完全沒報名、沒排入，卻出賽了 → 請盡快用系統登記
   if(!fullSignup && !reserveSignup && !fullPlaced && !reservePlaced && played) return {type:'warn1', date:row.date};
-  if((fullSignup||fullPlaced) && !played) return {type:'warn2', date:row.date};
-  if((reserveSignup||reservePlaced) && !played) return {type:'reserve', date:row.date};
+  // 只有「被排入戰鬥小隊」卻沒出賽，才是真正需要提醒的異常——排表是管理員決定的，
+  // 光是有報名、但沒被排進排表所以沒出賽，是正常現象（不是成員能控制的），不算異常
+  if(fullPlaced && !played) return {type:'warn2', date:row.date};
+  // 排入候補（或只報名候補）卻沒出賽：候補本來就不一定會被叫上場，屬正常情況、非異常
+  if((reservePlaced||reserveSignup) && !played) return {type:'reserve', date:row.date};
   return {type:'ok', date:row.date};
 }
 // 出席明細中「更早場次」收合列的展開/收合
