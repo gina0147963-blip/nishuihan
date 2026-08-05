@@ -723,8 +723,10 @@ function exportLineupImage(){
   }
 
   const title='⚔️ '+ev.name+' '+ORG_LABEL()+'（'+(ev.type||'')+'）';
-  let exported=0;
-  pages.forEach((page,pi)=>{
+  const fileName=pi=>'排表_'+ORG_LABEL()+'_'+ev.name+(pages.length>1?'_'+(pi+1):'')+'.png';
+
+  // 先把每一頁畫到各自的 canvas 上（跟原本邏輯一樣，只是先不急著下載）
+  const pageCanvases=pages.map((page,pi)=>{
     let totalH=HDH+PAD;
     page.teams.forEach(ti=>{ totalH+=teamBlockHeight(ti); });
     if(page.reserve) totalH+=reserveH;
@@ -742,16 +744,70 @@ function exportLineupImage(){
     let y=HDH+PAD;
     page.teams.forEach(ti=>{ y=drawTeam(ctx,ti,y); });
     if(page.reserve) y=drawReserve(ctx,y);
+    return cv;
+  });
 
-    cv.toBlob(blob=>{
+  const toBlobP=cv=>new Promise(res=>cv.toBlob(res));
+
+  (async()=>{
+    const blobs=await Promise.all(pageCanvases.map(toBlobP));
+
+    // 多張圖片時，優先用「原生分享」一次把所有圖片交出去（存到相簿／傳到LINE、Discord等）。
+    // 這是唯一能在 iOS 一次拿到「多張」圖片的做法——iOS Safari／iOS版Chrome（底層都是WebKit）
+    // 不允許用程式連續觸發多個檔案下載，只有第一張會成功，其餘會被悄悄擋掉，導致漏掉後半段排表。
+    if(pages.length>1 && navigator.share && navigator.canShare){
+      try{
+        const files=blobs.map((b,i)=>new File([b], fileName(i), {type:'image/png'}));
+        if(navigator.canShare({files})){
+          await navigator.share({files, title});
+          toast('✅ 已開啟分享，請選擇「儲存到相簿」以保留全部 '+pages.length+' 張圖片','ok');
+          return;
+        }
+      }catch(err){
+        if(err && err.name==='AbortError') return; // 使用者自己取消分享，不用再跳備援方案
+        // 其他錯誤就繼續往下走，改用備援方案（合併成一張圖）
+      }
+    }
+
+    if(pages.length===1){
+      const a=document.createElement('a');
+      a.href=URL.createObjectURL(blobs[0]);
+      a.download=fileName(0);
+      a.click();
+      toast('✅ 已匯出圖片','ok');
+      return;
+    }
+
+    // 備援方案（裝置不支援一次分享多檔案）：把所有頁面合併成「一張直向長圖」一次下載，
+    // 確保不支援分享的裝置也能完整拿到所有內容，不會像多次下載那樣漏掉後半段。
+    // 高度設一個安全上限：像 Discord 對超過 4000px 的圖片會自動強制縮小，與其讓平台用
+    // 自己的演算法縮，不如我們自己等比例縮小，畫質比較可控（文字不會被壓得亂七八糟）。
+    const gap=16;
+    const rawW=Math.max(...pageCanvases.map(cv=>cv.width));
+    const rawH=pageCanvases.reduce((s,cv)=>s+cv.height,0)+gap*(pageCanvases.length-1);
+    const SAFE_MAX_H=3800;
+    const shrink=rawH>SAFE_MAX_H ? SAFE_MAX_H/rawH : 1;
+    const totalW=Math.round(rawW*shrink), totalH=Math.round(rawH*shrink);
+    const combined=document.createElement('canvas');
+    combined.width=totalW; combined.height=totalH;
+    const cctx=combined.getContext('2d');
+    cctx.fillStyle='#0d1117'; cctx.fillRect(0,0,totalW,totalH);
+    let y=0;
+    pageCanvases.forEach(cv=>{
+      const dh=Math.round(cv.height*shrink);
+      cctx.drawImage(cv,0,y,totalW,dh);
+      y+=dh+Math.round(gap*shrink);
+    });
+    combined.toBlob(blob=>{
       const a=document.createElement('a');
       a.href=URL.createObjectURL(blob);
-      a.download='排表_'+ORG_LABEL()+'_'+ev.name+(pages.length>1?'_'+(pi+1):'')+'.png';
+      a.download='排表_'+ORG_LABEL()+'_'+ev.name+'.png';
       a.click();
-      exported++;
-      if(exported===pages.length) toast('✅ 已匯出 '+pages.length+' 張圖片','ok');
+      // LINE 預設傳送畫質很低（標準畫質約160萬畫素、高畫質約420萬畫素，都遠低於這張圖的實際畫素），
+      // 內容文字多的長圖用預設方式傳送很容易被壓到模糊，提醒用「傳檔案」或「原始畫質」的方式傳送。
+      toast('✅ 已合併匯出成一張完整圖片（此裝置不支援一次下載多張圖片）。LINE傳送時建議選「檔案」或「原始畫質」，避免內容文字被壓縮模糊','ok');
     });
-  });
+  })();
 }
 
 // ============================================================
